@@ -42,6 +42,14 @@ function generateUUID(): string {
   })
 }
 
+// Keys that indicate the object IS the domain data (not a wrapper)
+const DOMAIN_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy']
+
+function hasDomainKeys(obj: any): boolean {
+  if (!obj || typeof obj !== 'object') return false
+  return DOMAIN_KEYS.some(key => key in obj)
+}
+
 function normalizeResponse(parsed: any): NormalizedAgentResponse {
   if (!parsed) {
     return {
@@ -67,6 +75,17 @@ function normalizeResponse(parsed: any): NormalizedAgentResponse {
     }
   }
 
+  // PRIORITY: If this object has domain-specific keys, return it directly as the result
+  // This prevents message/response/result extraction from losing the actual data
+  if (hasDomainKeys(parsed)) {
+    return {
+      status: 'success',
+      result: parsed,
+      message: undefined,
+      metadata: undefined,
+    }
+  }
+
   if ('status' in parsed && 'result' in parsed) {
     return {
       status: parsed.status === 'error' ? 'error' : 'success',
@@ -88,6 +107,15 @@ function normalizeResponse(parsed: any): NormalizedAgentResponse {
 
   if ('result' in parsed) {
     const r = parsed.result
+    // If the result itself has domain keys, return it directly
+    if (hasDomainKeys(r)) {
+      return {
+        status: 'success',
+        result: r,
+        message: undefined,
+        metadata: parsed.metadata,
+      }
+    }
     const msg = parsed.message
       ?? (typeof r === 'string' ? r : null)
       ?? (r && typeof r === 'object'
@@ -318,7 +346,16 @@ async function pollTask(task_id: string) {
     // Not standard JSON envelope — parseLLMJson will handle it
   }
 
-  const parsed = parseLLMJson(agentResponseRaw)
+  let parsed = parseLLMJson(agentResponseRaw)
+
+  // If parseLLMJson returned a string, try parsing it again (double-stringified JSON from manager agents)
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      try { parsed = parseLLMJson(parsed) } catch {}
+    }
+  }
 
   const toNormalize =
     parsed && typeof parsed === 'object' && parsed.success === false && parsed.data === null
@@ -326,6 +363,11 @@ async function pollTask(task_id: string) {
       : parsed
 
   const normalized = normalizeResponse(toNormalize)
+
+  // Log for debugging (visible in server logs)
+  console.log('[pollTask] Task completed. Parsed type:', typeof parsed,
+    '| Parsed keys:', parsed && typeof parsed === 'object' ? Object.keys(parsed).slice(0, 10).join(',') : 'N/A',
+    '| Normalized keys:', typeof normalized.result === 'object' ? Object.keys(normalized.result).slice(0, 10).join(',') : 'N/A')
 
   return NextResponse.json({
     success: true,

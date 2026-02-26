@@ -178,46 +178,98 @@ type AppView = 'dashboard' | 'campaign'
 type SidebarFilter = 'all' | 'in_progress' | 'completed'
 
 // ─── HELPER: parse agent result robustly ─────────────────────────────────────
-function parseAgentResult(result: AIAgentResponse): any {
-  if (!result?.success) return null
+const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy']
 
-  const data = result?.response?.result
-  if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-    if (data.companies || data.enriched_companies || data.company_contacts || data.segmentation_strategy) {
-      return data
-    }
-    if (data.result && typeof data.result === 'object') {
-      const nested = data.result
-      if (nested.companies || nested.enriched_companies || nested.company_contacts || nested.segmentation_strategy) {
-        return nested
-      }
+function hasTargetKeys(obj: any): boolean {
+  if (!obj || typeof obj !== 'object') return false
+  return TARGET_KEYS.some(key => key in obj && obj[key] != null)
+}
+
+function deepFindTarget(obj: any, depth = 0): any {
+  if (!obj || typeof obj !== 'object' || depth > 8) return null
+  if (hasTargetKeys(obj)) return obj
+
+  // Check common nesting patterns from Lyzr agent responses
+  const unwrapKeys = ['result', 'response', 'data', 'output', 'content']
+  for (const key of unwrapKeys) {
+    if (obj[key] && typeof obj[key] === 'object') {
+      const found = deepFindTarget(obj[key], depth + 1)
+      if (found) return found
     }
   }
 
+  // Check if the value is a stringified JSON that needs parsing
+  for (const key of unwrapKeys) {
+    if (typeof obj[key] === 'string' && obj[key].includes('{')) {
+      try {
+        const innerParsed = parseLLMJson(obj[key])
+        if (innerParsed && typeof innerParsed === 'object') {
+          const found = deepFindTarget(innerParsed, depth + 1)
+          if (found) return found
+        }
+      } catch {}
+    }
+  }
+
+  return null
+}
+
+function parseAgentResult(result: AIAgentResponse): any {
+  if (!result?.success) {
+    console.warn('[parseAgentResult] result.success is false or result is null', { success: result?.success, error: result?.error })
+    return null
+  }
+
+  // Primary path: check result.response.result
+  const data = result?.response?.result
+  if (data && typeof data === 'object') {
+    const found = deepFindTarget(data)
+    if (found) return found
+  }
+
+  // Secondary path: check result.response directly (manager agents may skip .result)
+  if (result?.response && typeof result.response === 'object') {
+    const found = deepFindTarget(result.response)
+    if (found) return found
+  }
+
+  // Tertiary path: parse raw_response string
   if (result?.raw_response) {
     try {
       const parsed = parseLLMJson(result.raw_response)
       if (parsed && typeof parsed === 'object') {
-        if (parsed.companies || parsed.enriched_companies || parsed.company_contacts || parsed.segmentation_strategy) {
-          return parsed
-        }
-        if (parsed.result && typeof parsed.result === 'object') {
-          const nested = parsed.result
-          if (nested.companies || nested.enriched_companies || nested.company_contacts || nested.segmentation_strategy) {
-            return nested
-          }
-        }
-        if (parsed.response?.result) {
-          const nested = parsed.response.result
-          if (nested.companies || nested.enriched_companies || nested.company_contacts || nested.segmentation_strategy) {
-            return nested
-          }
-        }
+        const found = deepFindTarget(parsed)
+        if (found) return found
       }
     } catch {}
   }
 
-  return data || null
+  // Last resort: check if the raw_response is a double-stringified JSON
+  if (result?.raw_response && typeof result.raw_response === 'string') {
+    try {
+      const firstParse = JSON.parse(result.raw_response)
+      if (typeof firstParse === 'string') {
+        const secondParse = parseLLMJson(firstParse)
+        if (secondParse && typeof secondParse === 'object') {
+          const found = deepFindTarget(secondParse)
+          if (found) return found
+        }
+      } else if (typeof firstParse === 'object') {
+        const found = deepFindTarget(firstParse)
+        if (found) return found
+      }
+    } catch {}
+  }
+
+  // If we got data but couldn't find target keys, return it anyway
+  // (the caller will handle missing fields gracefully)
+  if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+    console.warn('[parseAgentResult] Data found but no target keys. Keys:', Object.keys(data))
+    return data
+  }
+
+  console.warn('[parseAgentResult] No parseable data found in agent response')
+  return null
 }
 
 // ─── MARKDOWN RENDERER ───────────────────────────────────────────────────────
@@ -1471,13 +1523,28 @@ export default function Page() {
     const message = `Business directive: ${campaign.directive}. Target company count: ${targetCount}. Filters: ${filtersStr}. Segment the search appropriately and find ${targetCount} target companies, deduplicate, and return a consolidated list.`
     try {
       const result = await callAIAgent(message, DISCOVERY_MANAGER_ID)
-      const parsed = parseAgentResult(result)
-      if (!parsed) {
-        setError('Failed to parse discovery results. Please try again.')
+      console.log('[runDiscovery] Raw agent result:', JSON.stringify(result).slice(0, 2000))
+
+      if (!result?.success) {
+        const errMsg = result?.error || result?.response?.message || 'Agent returned an error. Please try again.'
+        console.error('[runDiscovery] Agent call failed:', errMsg)
+        setError(errMsg)
         setLoading(false)
         setActiveAgentId(null)
         return
       }
+
+      const parsed = parseAgentResult(result)
+      console.log('[runDiscovery] Parsed result keys:', parsed ? Object.keys(parsed) : 'null')
+
+      if (!parsed) {
+        console.error('[runDiscovery] parseAgentResult returned null. Full response:', JSON.stringify(result).slice(0, 3000))
+        setError('Failed to parse discovery results. The agent may have returned an unexpected format. Please try again.')
+        setLoading(false)
+        setActiveAgentId(null)
+        return
+      }
+
       const companies: Company[] = Array.isArray(parsed?.companies)
         ? parsed.companies.map((c: any) => ({
             name: c?.name ?? '', industry: c?.industry ?? '', hq_location: c?.hq_location ?? '',
@@ -1486,6 +1553,17 @@ export default function Page() {
             source_segment: c?.source_segment ?? '', selected: true,
           }))
         : []
+
+      if (companies.length === 0) {
+        console.warn('[runDiscovery] No companies extracted. parsed.companies:', parsed?.companies)
+        setError(`Discovery completed but no companies were found. The agent may need a more specific directive. Parsed keys: ${Object.keys(parsed).join(', ')}`)
+        setLoading(false)
+        setActiveAgentId(null)
+        return
+      }
+
+      console.log(`[runDiscovery] Successfully extracted ${companies.length} companies`)
+
       const segmentationStrategy: SegmentStrategy[] = Array.isArray(parsed?.segmentation_strategy)
         ? parsed.segmentation_strategy.map((s: any) => ({
             segment_name: s?.segment_name ?? '', target_count: typeof s?.target_count === 'number' ? s.target_count : 0,
@@ -1498,6 +1576,7 @@ export default function Page() {
         segmentationStrategy, duplicatesRemoved, updatedAt: new Date().toISOString(),
       })
     } catch (err) {
+      console.error('[runDiscovery] Exception:', err)
       setError(err instanceof Error ? err.message : 'Discovery failed. Please try again.')
     }
     setLoading(false)
