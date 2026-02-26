@@ -1194,35 +1194,41 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
           <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3">
             <FiRefreshCw className="w-4 h-4 animate-spin" />
             {enrichmentProgress
-              ? `Enriching companies: ${enrichmentProgress.current} of ${enrichmentProgress.total} processed (Gemini + Sonar in parallel per batch)...`
-              : 'Running both enrichment models in parallel...'}
+              ? `Deep research: ${enrichmentProgress.current} of ${enrichmentProgress.total} companies enriched (Gemini + Sonar per company)`
+              : 'Starting deep company research...'}
           </div>
           {enrichmentProgress && (
             <div className="mb-4">
-              <div className="w-full h-2 rounded-full bg-muted overflow-hidden mb-2">
-                <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${Math.max((enrichmentProgress.current / Math.max(enrichmentProgress.total, 1)) * 100, 5)}%` }} />
+              <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden mb-3">
+                <div className="h-full rounded-full bg-primary transition-all duration-700 ease-out" style={{ width: `${Math.max((enrichmentProgress.current / Math.max(enrichmentProgress.total, 1)) * 100, 3)}%` }} />
               </div>
-              {enrichmentProgress.completed.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {enrichmentProgress.completed.map((name, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      <FiCheckCircle className="w-3 h-3" /> {name}
-                    </span>
-                  ))}
-                </div>
-              )}
+              <div className="flex flex-wrap gap-1.5">
+                {enrichmentProgress.completed.map((name, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <FiCheckCircle className="w-3 h-3" /> {name}
+                  </span>
+                ))}
+                {enrichmentProgress.current < enrichmentProgress.total && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary animate-pulse">
+                    <FiRefreshCw className="w-3 h-3 animate-spin" /> Researching...
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Each company is individually researched with targeted search queries for revenue, news, leadership, growth signals, and competitive intelligence.</p>
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiDatabase className="w-3 h-3" /> Gemini 2.5 Pro</div>
-              {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
+          {!enrichmentProgress && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiDatabase className="w-3 h-3" /> Gemini 2.5 Pro</div>
+                {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
+              </div>
+              <div className="space-y-3">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiSearch className="w-3 h-3" /> Sonar Pro</div>
+                {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
+              </div>
             </div>
-            <div className="space-y-3">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiSearch className="w-3 h-3" /> Sonar Pro</div>
-              {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -1624,6 +1630,76 @@ export default function Page() {
       : []
   }
 
+  // Build a focused, semantic enrichment prompt for a single company
+  const buildEnrichmentPrompt = useCallback((company: Company): string => {
+    const name = company.name
+    const industry = company.industry || 'technology'
+    const location = company.hq_location || ''
+    const size = company.estimated_size || ''
+    const website = company.website || ''
+
+    return `Research the company "${name}" and provide comprehensive business intelligence.
+
+Company context:
+- Name: ${name}
+- Industry: ${industry}
+${location ? `- Headquarters: ${location}` : ''}
+${size ? `- Estimated size: ${size} employees` : ''}
+${website ? `- Website: ${website}` : ''}
+
+Perform the following targeted research queries for "${name}":
+
+1. REVENUE & FINANCIALS: Search for "${name} revenue", "${name} annual revenue ${new Date().getFullYear()}", "${name} funding rounds", "${name} valuation". For private companies, check Crunchbase, PitchBook, CB Insights estimates. For public companies, check latest quarterly/annual earnings.
+
+2. RECENT NEWS & DEVELOPMENTS: Search for "${name} news ${new Date().getFullYear()}", "${name} announcements", "${name} press releases". Find the 3 most significant recent events — funding rounds, product launches, acquisitions, partnerships, regulatory actions, or market moves.
+
+3. EXECUTIVE LEADERSHIP: Search for "${name} CEO", "${name} leadership team", "${name} executive appointments ${new Date().getFullYear()}", "${name} C-suite changes". Identify any recent hires, departures, or role changes at the C-suite, SVP, or VP level.
+
+4. GROWTH SIGNALS: Search for "${name} hiring", "${name} expansion", "${name} new office", "${name} job openings", "${name} growth". Look for indicators like: headcount growth, new market entry, geographic expansion, new product lines, increasing job postings, office openings.
+
+5. COMPETITIVE LANDSCAPE: Search for "${name} competitors", "${name} vs", "${name} technology stack", "${name} partners". Identify: direct competitors in their space, technology vendors/platforms they use, strategic partnerships or alliances.
+
+Return your findings as structured JSON for this ONE company. Every field must be populated — use "Not publicly disclosed" for revenue if unavailable, and empty arrays if no data found for a category.`
+  }, [])
+
+  // Enrich a single company with both models in parallel
+  const enrichSingleCompany = useCallback(async (
+    company: Company,
+    onComplete: (name: string, gemini: EnrichedCompany | null, sonar: EnrichedCompany | null) => void
+  ) => {
+    const message = buildEnrichmentPrompt(company)
+    const start = Date.now()
+
+    const [geminiResult, sonarResult] = await Promise.allSettled([
+      callAIAgent(message, ENRICHMENT_GEMINI_ID),
+      callAIAgent(message, ENRICHMENT_SONAR_ID),
+    ])
+    const elapsed = Date.now() - start
+
+    let geminiCompany: EnrichedCompany | null = null
+    let sonarCompany: EnrichedCompany | null = null
+
+    if (geminiResult.status === 'fulfilled') {
+      const parsed = parseAgentResult(geminiResult.value)
+      if (parsed) {
+        const enriched = parseEnrichmentResult(parsed)
+        geminiCompany = enriched[0] ?? null
+      }
+    }
+
+    if (sonarResult.status === 'fulfilled') {
+      const parsed = parseAgentResult(sonarResult.value)
+      if (parsed) {
+        const enriched = parseEnrichmentResult(parsed)
+        sonarCompany = enriched[0] ?? null
+      }
+    }
+
+    console.log(`[enrichSingleCompany] ${company.name}: Gemini=${geminiCompany ? 'OK' : 'FAIL'}, Sonar=${sonarCompany ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
+    onComplete(company.name, geminiCompany, sonarCompany)
+    return { name: company.name, gemini: geminiCompany, sonar: sonarCompany, elapsed }
+  }, [buildEnrichmentPrompt])
+
   const runEnrichment = useCallback(async (campaign: Campaign) => {
     const selected = (campaign.companies ?? []).filter(c => c.selected)
     if (selected.length === 0) return
@@ -1631,113 +1707,91 @@ export default function Page() {
     setError(null)
     setActiveAgentId(ENRICHMENT_GEMINI_ID)
 
-    // Batch companies in groups of 3 to ensure each gets thorough research
-    const BATCH_SIZE = 3
-    const batches: typeof selected[] = []
-    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
-      batches.push(selected.slice(i, i + BATCH_SIZE))
-    }
-
-    let allGeminiEnriched: EnrichedCompany[] = []
-    let allSonarEnriched: EnrichedCompany[] = []
-    let allGeminiSummaries: string[] = []
-    let allSonarSummaries: string[] = []
-    let totalGeminiTime = 0
-    let totalSonarTime = 0
-    let batchErrors: string[] = []
+    const geminiResults: EnrichedCompany[] = []
+    const sonarResults: EnrichedCompany[] = []
+    let totalTime = 0
 
     setEnrichmentProgress({ current: 0, total: selected.length, completed: [] })
 
     try {
-      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-        const batch = batches[batchIdx]
-        const batchPayload = batch.map(c => ({ name: c.name, industry: c.industry, hq_location: c.hq_location, estimated_size: c.estimated_size, website: c.website }))
-        const batchMessage = `Enrich the following ${batchPayload.length} companies with revenue, recent news, C-suite changes, growth indicators, and competitive intelligence. Research EACH company thoroughly — do not skip any.\n\nCompanies to enrich:\n${JSON.stringify(batchPayload, null, 2)}`
+      // Run companies in parallel with concurrency limit of 4
+      const CONCURRENCY = 4
+      const queue = [...selected]
+      const active: Promise<any>[] = []
+      let completedCount = 0
 
-        setEnrichmentProgress(prev => ({
-          current: batchIdx * BATCH_SIZE,
-          total: selected.length,
-          completed: prev?.completed ?? [],
-        }))
+      const processCompany = (company: Company) => {
+        return enrichSingleCompany(company, (name, gemini, sonar) => {
+          completedCount++
+          if (gemini) geminiResults.push(gemini)
+          if (sonar) sonarResults.push(sonar)
 
-        // Alternate active agent indicator between Gemini and Sonar
-        setActiveAgentId(batchIdx % 2 === 0 ? ENRICHMENT_GEMINI_ID : ENRICHMENT_SONAR_ID)
+          setEnrichmentProgress({
+            current: completedCount,
+            total: selected.length,
+            completed: [...geminiResults.map(g => g.company_name)],
+          })
 
-        const batchStart = Date.now()
-        const [geminiResult, sonarResult] = await Promise.allSettled([
-          callAIAgent(batchMessage, ENRICHMENT_GEMINI_ID),
-          callAIAgent(batchMessage, ENRICHMENT_SONAR_ID),
-        ])
-        const batchTime = Date.now() - batchStart
+          // Toggle active agent indicator
+          setActiveAgentId(completedCount % 2 === 0 ? ENRICHMENT_GEMINI_ID : ENRICHMENT_SONAR_ID)
 
-        // Parse Gemini batch results
-        if (geminiResult.status === 'fulfilled') {
-          totalGeminiTime += batchTime
-          const parsed = parseAgentResult(geminiResult.value)
-          if (parsed) {
-            const enriched = parseEnrichmentResult(parsed)
-            allGeminiEnriched = [...allGeminiEnriched, ...enriched]
-            if (parsed?.enrichment_summary) allGeminiSummaries.push(parsed.enrichment_summary)
-          }
-        } else {
-          console.warn(`[runEnrichment] Gemini batch ${batchIdx + 1} failed:`, geminiResult.reason)
-        }
-
-        // Parse Sonar batch results
-        if (sonarResult.status === 'fulfilled') {
-          totalSonarTime += batchTime
-          const parsed = parseAgentResult(sonarResult.value)
-          if (parsed) {
-            const enriched = parseEnrichmentResult(parsed)
-            allSonarEnriched = [...allSonarEnriched, ...enriched]
-            if (parsed?.enrichment_summary) allSonarSummaries.push(parsed.enrichment_summary)
-          }
-        } else {
-          console.warn(`[runEnrichment] Sonar batch ${batchIdx + 1} failed:`, sonarResult.reason)
-        }
-
-        // Check if this batch produced any results
-        const batchGeminiCount = geminiResult.status === 'fulfilled' ? parseEnrichmentResult(parseAgentResult(geminiResult.value) || {}).length : 0
-        const batchSonarCount = sonarResult.status === 'fulfilled' ? parseEnrichmentResult(parseAgentResult(sonarResult.value) || {}).length : 0
-        if (batchGeminiCount === 0 && batchSonarCount === 0) {
-          batchErrors.push(`Batch ${batchIdx + 1} (${batch.map(c => c.name).join(', ')}) returned no results`)
-        }
-
-        // Update progress with completed company names
-        const completedNames = batch.map(c => c.name)
-        setEnrichmentProgress(prev => ({
-          current: Math.min((batchIdx + 1) * BATCH_SIZE, selected.length),
-          total: selected.length,
-          completed: [...(prev?.completed ?? []), ...completedNames],
-        }))
-
-        // Progressively update campaign so user sees results appearing
-        updateCampaign({
-          ...campaign,
-          enrichedCompanies: allGeminiEnriched,
-          enrichedCompaniesSonar: allSonarEnriched,
-          stage: 'enrichment',
-          enrichmentSummary: allGeminiSummaries.join(' '),
-          enrichmentSummarySonar: allSonarSummaries.join(' '),
-          enrichmentTimings: { gemini: totalGeminiTime, sonar: totalSonarTime },
-          updatedAt: new Date().toISOString(),
+          // Progressive update — show results as they arrive
+          updateCampaign({
+            ...campaign,
+            enrichedCompanies: [...geminiResults],
+            enrichedCompaniesSonar: [...sonarResults],
+            stage: 'enrichment',
+            enrichmentSummary: `Enriched ${geminiResults.length} of ${selected.length} companies via Gemini 2.5 Pro.`,
+            enrichmentSummarySonar: `Enriched ${sonarResults.length} of ${selected.length} companies via Sonar Pro.`,
+            enrichmentTimings: { gemini: totalTime, sonar: totalTime },
+            updatedAt: new Date().toISOString(),
+          })
         })
       }
 
-      if (allGeminiEnriched.length === 0 && allSonarEnriched.length === 0) {
-        setError('Both enrichment models failed to return results across all batches. Please try again.')
-      } else if (batchErrors.length > 0) {
-        console.warn('[runEnrichment] Some batches had issues:', batchErrors)
+      // Process with controlled concurrency
+      const results: { name: string; elapsed: number }[] = []
+      while (queue.length > 0 || active.length > 0) {
+        // Fill up to concurrency limit
+        while (active.length < CONCURRENCY && queue.length > 0) {
+          const company = queue.shift()!
+          const promise = processCompany(company).then(r => {
+            results.push({ name: r.name, elapsed: r.elapsed })
+            totalTime += r.elapsed
+            active.splice(active.indexOf(promise), 1)
+          })
+          active.push(promise)
+        }
+        // Wait for at least one to finish
+        if (active.length > 0) {
+          await Promise.race(active)
+        }
       }
 
-      console.log(`[runEnrichment] Complete: ${allGeminiEnriched.length} Gemini, ${allSonarEnriched.length} Sonar enriched across ${batches.length} batches`)
+      if (geminiResults.length === 0 && sonarResults.length === 0) {
+        setError('Both enrichment models failed to return results. Please try again.')
+      }
+
+      // Final update with complete data
+      updateCampaign({
+        ...campaign,
+        enrichedCompanies: geminiResults,
+        enrichedCompaniesSonar: sonarResults,
+        stage: 'enrichment',
+        enrichmentSummary: `Enriched ${geminiResults.length} companies with revenue, news, leadership, growth signals, and competitive intelligence via Gemini 2.5 Pro.`,
+        enrichmentSummarySonar: `Enriched ${sonarResults.length} companies via Sonar Pro for comparison.`,
+        enrichmentTimings: { gemini: totalTime, sonar: totalTime },
+        updatedAt: new Date().toISOString(),
+      })
+
+      console.log(`[runEnrichment] Complete: ${geminiResults.length} Gemini, ${sonarResults.length} Sonar. Total time: ${(totalTime / 1000).toFixed(1)}s across ${selected.length} companies`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrichment failed. Please try again.')
     }
     setLoading(false)
     setActiveAgentId(null)
     setEnrichmentProgress(null)
-  }, [updateCampaign])
+  }, [updateCampaign, enrichSingleCompany])
 
   const runContactFinder = useCallback(async (campaign: Campaign) => {
     const selected = (campaign.enrichedCompanies ?? []).filter(c => c.selected)
