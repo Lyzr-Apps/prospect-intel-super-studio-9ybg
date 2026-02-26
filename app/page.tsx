@@ -9,7 +9,8 @@ import {
   FiCompass, FiUsers, FiTrendingUp, FiDollarSign, FiEdit3, FiMail,
   FiPhone, FiGlobe, FiFlag, FiClock, FiAlertCircle, FiCheckCircle,
   FiArrowRight, FiChevronRight, FiMenu, FiMoreVertical, FiMapPin,
-  FiBriefcase, FiAward, FiBarChart2, FiDatabase, FiTarget, FiLayers
+  FiBriefcase, FiAward, FiBarChart2, FiDatabase, FiTarget, FiLayers,
+  FiUpload, FiFile, FiColumns
 } from 'react-icons/fi'
 import { HiOutlineSparkles, HiOutlineBuildingOffice2 } from 'react-icons/hi2'
 
@@ -395,6 +396,467 @@ function saveCampaigns(campaigns: Campaign[]) {
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9)
+}
+
+// ─── CSV/EXCEL PARSING ──────────────────────────────────────────────────
+function parseCSVText(text: string): string[][] {
+  const rows: string[][] = []
+  let current = ''
+  let inQuotes = false
+  let row: string[] = []
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    const next = text[i + 1]
+
+    if (inQuotes) {
+      if (ch === '"' && next === '"') {
+        current += '"'
+        i++
+      } else if (ch === '"') {
+        inQuotes = false
+      } else {
+        current += ch
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true
+      } else if (ch === ',') {
+        row.push(current.trim())
+        current = ''
+      } else if (ch === '\n' || (ch === '\r' && next === '\n')) {
+        row.push(current.trim())
+        current = ''
+        if (row.some(cell => cell.length > 0)) rows.push(row)
+        row = []
+        if (ch === '\r') i++
+      } else {
+        current += ch
+      }
+    }
+  }
+  // Last row
+  row.push(current.trim())
+  if (row.some(cell => cell.length > 0)) rows.push(row)
+
+  return rows
+}
+
+async function parseXLSXFile(file: File): Promise<string[][]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      try {
+        // Dynamically load SheetJS from CDN
+        if (!(window as any).XLSX) {
+          await new Promise<void>((res, rej) => {
+            const script = document.createElement('script')
+            script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'
+            script.onload = () => res()
+            script.onerror = () => rej(new Error('Failed to load Excel parser. Please use CSV format instead.'))
+            document.head.appendChild(script)
+          })
+        }
+        const XLSX = (window as any).XLSX
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+        const jsonData: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1 })
+        const rows = jsonData.map(row => row.map((cell: any) => String(cell ?? '').trim()))
+        resolve(rows)
+      } catch (err) {
+        reject(err)
+      }
+    }
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+// Normalize company name for deduplication
+function normalizeCompanyName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\b(inc|corp|corporation|ltd|limited|llc|llp|co|company|group|holdings|plc|gmbh|ag|sa|pty|pvt|private)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Deduplicate companies by normalized name, keeping the one with more data
+function deduplicateCompanies(companies: Company[]): { deduplicated: Company[]; removedCount: number } {
+  const seen = new Map<string, Company>()
+  let removedCount = 0
+
+  for (const company of companies) {
+    const key = normalizeCompanyName(company.name)
+    if (!key) continue
+
+    const existing = seen.get(key)
+    if (existing) {
+      removedCount++
+      // Keep whichever has more filled fields (prefer discovered over uploaded for richer data)
+      const existingScore = [existing.industry, existing.hq_location, existing.estimated_size, existing.website, existing.relevance_reasoning].filter(Boolean).length
+      const newScore = [company.industry, company.hq_location, company.estimated_size, company.website, company.relevance_reasoning].filter(Boolean).length
+      if (newScore > existingScore) {
+        seen.set(key, company)
+      }
+    } else {
+      seen.set(key, company)
+    }
+  }
+
+  return { deduplicated: Array.from(seen.values()), removedCount }
+}
+
+// Column mapping types
+interface ColumnMapping {
+  name: number | null
+  industry: number | null
+  hq_location: number | null
+  estimated_size: number | null
+  website: number | null
+}
+
+const COMPANY_FIELDS: { key: keyof ColumnMapping; label: string; required: boolean }[] = [
+  { key: 'name', label: 'Company Name', required: true },
+  { key: 'industry', label: 'Industry', required: false },
+  { key: 'hq_location', label: 'HQ Location', required: false },
+  { key: 'estimated_size', label: 'Company Size', required: false },
+  { key: 'website', label: 'Website', required: false },
+]
+
+// Auto-detect column mapping from header row
+function autoDetectMapping(headers: string[]): ColumnMapping {
+  const mapping: ColumnMapping = { name: null, industry: null, hq_location: null, estimated_size: null, website: null }
+  const lowerHeaders = headers.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''))
+
+  for (let i = 0; i < lowerHeaders.length; i++) {
+    const h = lowerHeaders[i]
+    if (!mapping.name && (h.includes('company') || h.includes('name') || h.includes('organization') || h.includes('account'))) {
+      mapping.name = i
+    } else if (!mapping.industry && (h.includes('industry') || h.includes('sector') || h.includes('vertical'))) {
+      mapping.industry = i
+    } else if (!mapping.hq_location && (h.includes('location') || h.includes('hq') || h.includes('headquarters') || h.includes('city') || h.includes('country') || h.includes('address'))) {
+      mapping.hq_location = i
+    } else if (!mapping.estimated_size && (h.includes('size') || h.includes('employee') || h.includes('headcount') || h.includes('staff'))) {
+      mapping.estimated_size = i
+    } else if (!mapping.website && (h.includes('website') || h.includes('url') || h.includes('domain') || h.includes('web'))) {
+      mapping.website = i
+    }
+  }
+
+  // If no company name column found, default to first column
+  if (mapping.name === null && headers.length > 0) {
+    mapping.name = 0
+  }
+
+  return mapping
+}
+
+// ─── FILE UPLOAD COMPONENT ──────────────────────────────────────────────────
+function FileUploadPanel({ onImport }: { onImport: (companies: Company[], duplicateCount: number) => void }) {
+  const [uploadState, setUploadState] = useState<'idle' | 'parsing' | 'mapping' | 'preview'>('idle')
+  const [dragActive, setDragActive] = useState(false)
+  const [fileName, setFileName] = useState('')
+  const [parsedRows, setParsedRows] = useState<string[][]>([])
+  const [headers, setHeaders] = useState<string[]>([])
+  const [mapping, setMapping] = useState<ColumnMapping>({ name: null, industry: null, hq_location: null, estimated_size: null, website: null })
+  const [parseError, setParseError] = useState<string | null>(null)
+  const [previewCompanies, setPreviewCompanies] = useState<Company[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFile = useCallback(async (file: File) => {
+    setParseError(null)
+    setUploadState('parsing')
+    setFileName(file.name)
+
+    try {
+      let rows: string[][]
+      const ext = file.name.toLowerCase().split('.').pop()
+
+      if (ext === 'csv' || ext === 'tsv') {
+        const text = await file.text()
+        rows = parseCSVText(text)
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        rows = await parseXLSXFile(file)
+      } else {
+        throw new Error('Unsupported file format. Please upload a CSV or Excel (.xlsx) file.')
+      }
+
+      if (rows.length < 2) {
+        throw new Error('File appears to be empty or has only a header row.')
+      }
+
+      const headerRow = rows[0]
+      const dataRows = rows.slice(1).filter(row => row.some(cell => cell.length > 0))
+
+      setHeaders(headerRow)
+      setParsedRows(dataRows)
+
+      // Auto-detect column mapping
+      const detected = autoDetectMapping(headerRow)
+      setMapping(detected)
+      setUploadState('mapping')
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : 'Failed to parse file.')
+      setUploadState('idle')
+    }
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragActive(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleFile(file)
+  }, [handleFile])
+
+  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) handleFile(file)
+    // Reset input so same file can be re-uploaded
+    e.target.value = ''
+  }, [handleFile])
+
+  const applyMapping = useCallback(() => {
+    if (mapping.name === null) return
+
+    const companies: Company[] = parsedRows.map(row => ({
+      name: row[mapping.name!] || '',
+      industry: mapping.industry !== null ? (row[mapping.industry] || '') : '',
+      hq_location: mapping.hq_location !== null ? (row[mapping.hq_location] || '') : '',
+      estimated_size: mapping.estimated_size !== null ? (row[mapping.estimated_size] || '') : '',
+      relevance_score: 0,
+      relevance_reasoning: 'Uploaded from file',
+      website: mapping.website !== null ? (row[mapping.website] || '') : '',
+      source_segment: 'File Upload',
+      selected: true,
+    })).filter(c => c.name.trim().length > 0)
+
+    setPreviewCompanies(companies)
+    setUploadState('preview')
+  }, [mapping, parsedRows])
+
+  const confirmImport = useCallback(() => {
+    onImport(previewCompanies, 0)
+    // Reset state
+    setUploadState('idle')
+    setFileName('')
+    setParsedRows([])
+    setHeaders([])
+    setPreviewCompanies([])
+    setMapping({ name: null, industry: null, hq_location: null, estimated_size: null, website: null })
+  }, [previewCompanies, onImport])
+
+  const resetUpload = useCallback(() => {
+    setUploadState('idle')
+    setFileName('')
+    setParsedRows([])
+    setHeaders([])
+    setPreviewCompanies([])
+    setMapping({ name: null, industry: null, hq_location: null, estimated_size: null, website: null })
+    setParseError(null)
+  }, [])
+
+  const updateMapping = useCallback((field: keyof ColumnMapping, colIndex: number | null) => {
+    setMapping(prev => ({ ...prev, [field]: colIndex }))
+  }, [])
+
+  return (
+    <div className="bg-card rounded-lg border border-border/30 overflow-hidden mb-5">
+      <div className="p-4 border-b border-border/20 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FiUpload className="w-4 h-4 text-primary" />
+          <h4 className="text-sm font-serif font-semibold text-foreground tracking-wide">Import Company List</h4>
+        </div>
+        {uploadState !== 'idle' && (
+          <button onClick={resetUpload} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+            <FiX className="w-3 h-3" /> Reset
+          </button>
+        )}
+      </div>
+
+      <div className="p-4">
+        {/* IDLE STATE - Drop zone */}
+        {uploadState === 'idle' && (
+          <div
+            className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${dragActive ? 'border-primary bg-primary/5' : 'border-border/40 hover:border-primary/50 hover:bg-muted/20'}`}
+            onDragOver={e => { e.preventDefault(); setDragActive(true) }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls,.tsv"
+              onChange={handleFileInput}
+              className="hidden"
+            />
+            <FiFile className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm font-medium text-foreground mb-1">
+              {dragActive ? 'Drop file here' : 'Drop a CSV or Excel file here'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              or click to browse. Supports .csv, .xlsx, .xls formats
+            </p>
+          </div>
+        )}
+
+        {/* PARSING STATE */}
+        {uploadState === 'parsing' && (
+          <div className="flex items-center gap-3 py-4">
+            <FiRefreshCw className="w-5 h-5 text-primary animate-spin" />
+            <div>
+              <p className="text-sm font-medium text-foreground">Parsing {fileName}...</p>
+              <p className="text-xs text-muted-foreground">Detecting columns and reading data</p>
+            </div>
+          </div>
+        )}
+
+        {/* MAPPING STATE - Column mapping UI */}
+        {uploadState === 'mapping' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                  <FiFile className="w-3.5 h-3.5 text-primary" /> {fileName}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">{parsedRows.length} rows detected</p>
+              </div>
+              <InlineBadge variant="accent"><FiColumns className="w-3 h-3 mr-0.5" /> {headers.length} columns</InlineBadge>
+            </div>
+
+            <div className="bg-muted/20 rounded-lg p-3 border border-border/20">
+              <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Map Columns to Fields</h5>
+              <div className="space-y-2.5">
+                {COMPANY_FIELDS.map(field => (
+                  <div key={field.key} className="flex items-center gap-3">
+                    <label className="text-sm text-foreground font-medium w-32 flex-shrink-0 flex items-center gap-1">
+                      {field.label}
+                      {field.required && <span className="text-red-500 text-xs">*</span>}
+                    </label>
+                    <select
+                      value={mapping[field.key] ?? ''}
+                      onChange={e => updateMapping(field.key, e.target.value === '' ? null : Number(e.target.value))}
+                      className="flex-1 px-3 py-1.5 rounded-md bg-background border border-border/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value="">-- Skip --</option>
+                      {headers.map((h, i) => (
+                        <option key={i} value={i}>{h || `Column ${i + 1}`}</option>
+                      ))}
+                    </select>
+                    {mapping[field.key] !== null && (
+                      <span className="text-xs text-muted-foreground w-36 truncate flex-shrink-0" title={parsedRows[0]?.[mapping[field.key]!] || ''}>
+                        e.g. {parsedRows[0]?.[mapping[field.key]!] || '(empty)'}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Preview of first 3 rows */}
+            <div className="bg-muted/10 rounded-lg p-3 border border-border/20">
+              <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Data Preview (first 3 rows)</h5>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border/20">
+                      {headers.map((h, i) => (
+                        <th key={i} className={`px-2 py-1 text-left font-medium ${Object.values(mapping).includes(i) ? 'text-primary' : 'text-muted-foreground'}`}>{h || `Col ${i + 1}`}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedRows.slice(0, 3).map((row, ri) => (
+                      <tr key={ri} className="border-b border-border/10">
+                        {headers.map((_, ci) => (
+                          <td key={ci} className={`px-2 py-1 ${Object.values(mapping).includes(ci) ? 'text-foreground' : 'text-muted-foreground/60'}`}>
+                            {row[ci] || '-'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button onClick={resetUpload} className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors">Cancel</button>
+              <button
+                onClick={applyMapping}
+                disabled={mapping.name === null}
+                className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                Preview Import
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* PREVIEW STATE - Show what will be imported */}
+        {uploadState === 'preview' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">{previewCompanies.length} companies ready to import</p>
+                <p className="text-xs text-muted-foreground mt-0.5">From {fileName}. Companies will be merged with any existing discovered companies.</p>
+              </div>
+              <InlineBadge variant="success"><FiCheckCircle className="w-3 h-3 mr-0.5" /> Parsed</InlineBadge>
+            </div>
+
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-border/20">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/30 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground">Company</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground hidden sm:table-cell">Industry</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground hidden md:table-cell">Location</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground hidden lg:table-cell">Size</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewCompanies.slice(0, 20).map((c, i) => (
+                    <tr key={i} className="border-b border-border/10">
+                      <td className="px-3 py-1.5 text-foreground font-medium">{c.name}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground hidden sm:table-cell">{c.industry || '-'}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground hidden md:table-cell">{c.hq_location || '-'}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground hidden lg:table-cell">{c.estimated_size || '-'}</td>
+                    </tr>
+                  ))}
+                  {previewCompanies.length > 20 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-1.5 text-center text-xs text-muted-foreground">...and {previewCompanies.length - 20} more</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setUploadState('mapping')} className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors">Back to Mapping</button>
+              <button
+                onClick={confirmImport}
+                className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-sm flex items-center gap-1.5"
+              >
+                <FiUpload className="w-3.5 h-3.5" /> Import {previewCompanies.length} Companies
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error state */}
+        {parseError && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+            <FiAlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{parseError}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 // ─── ERROR BOUNDARY ──────────────────────────────────────────────────────────
@@ -813,6 +1275,18 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
   const companies = Array.isArray(campaign.companies) ? campaign.companies : []
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const selectedCount = companies.filter(c => c.selected).length
+  const [showUpload, setShowUpload] = useState(false)
+  const [lastImportInfo, setLastImportInfo] = useState<{ imported: number; duplicates: number } | null>(null)
+
+  const handleImport = useCallback((imported: Company[], _duplicateCount: number) => {
+    // Merge with existing companies and deduplicate
+    const combined = [...companies, ...imported]
+    const { deduplicated, removedCount } = deduplicateCompanies(combined)
+    setLastImportInfo({ imported: imported.length, duplicates: removedCount })
+    onUpdateCampaign({ ...campaign, companies: deduplicated, updatedAt: new Date().toISOString() })
+    // Auto-hide upload panel after import
+    setTimeout(() => setShowUpload(false), 500)
+  }, [companies, campaign, onUpdateCampaign])
 
   const toggleSelect = (name: string) => {
     const updated = companies.map(c => c.name === name ? { ...c, selected: !c.selected } : c)
@@ -868,6 +1342,37 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
         </div>
       )}
 
+      {/* Import notification */}
+      {lastImportInfo && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-green-700 text-sm">
+            <FiCheckCircle className="w-4 h-4 flex-shrink-0" />
+            <span>
+              Imported {lastImportInfo.imported} companies.
+              {lastImportInfo.duplicates > 0 && ` ${lastImportInfo.duplicates} duplicate${lastImportInfo.duplicates > 1 ? 's' : ''} removed.`}
+            </span>
+          </div>
+          <button onClick={() => setLastImportInfo(null)} className="text-green-700 hover:text-green-800 flex-shrink-0 ml-2">
+            <FiX className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Upload toggle + panel */}
+      {!loading && (
+        <div className="mb-5">
+          <button
+            onClick={() => setShowUpload(!showUpload)}
+            className={`flex items-center gap-2 text-sm font-medium transition-colors mb-3 ${showUpload ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <FiUpload className="w-4 h-4" />
+            {showUpload ? 'Hide Import Panel' : 'Import from CSV / Excel'}
+            {showUpload ? <FiChevronUp className="w-3.5 h-3.5" /> : <FiChevronDown className="w-3.5 h-3.5" />}
+          </button>
+          {showUpload && <FileUploadPanel onImport={handleImport} />}
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2 text-red-700 text-sm"><FiAlertCircle className="w-4 h-4 flex-shrink-0" /> <span>{error}</span></div>
@@ -889,9 +1394,15 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
           <FiSearch className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">Ready to discover companies</h3>
           <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">The Discovery Manager will segment your directive and coordinate parallel researcher agents to find up to {campaign.filters?.targetCount ?? 50} target companies.</p>
-          <button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
-            <FiSearch className="w-4 h-4" /> Generate Prospect List
-          </button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
+              <FiSearch className="w-4 h-4" /> Generate Prospect List
+            </button>
+            <span className="text-xs text-muted-foreground">or</span>
+            <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border/30 bg-card text-foreground text-sm font-medium hover:bg-muted/30 transition-colors">
+              <FiUpload className="w-4 h-4" /> Import from File
+            </button>
+          </div>
         </div>
       )}
 
@@ -903,6 +1414,12 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                 <FiCheck className="w-3.5 h-3.5" /> {companies.every(c => c.selected) ? 'Deselect All' : 'Select All'}
               </button>
               <span className="text-sm text-muted-foreground">{selectedCount} of {companies.length} selected</span>
+              {companies.some(c => c.source_segment === 'File Upload') && (
+                <InlineBadge variant="accent">
+                  <FiUpload className="w-3 h-3 mr-0.5" />
+                  {companies.filter(c => c.source_segment === 'File Upload').length} uploaded
+                </InlineBadge>
+              )}
             </div>
             <button onClick={onEnrich} disabled={selectedCount === 0 || loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
               <FiArrowRight className="w-4 h-4" /> Enrich Selected ({selectedCount})
@@ -945,7 +1462,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                         <td className="p-3 text-muted-foreground hidden lg:table-cell"><span className="flex items-center gap-1"><FiMapPin className="w-3 h-3" /> {co.hq_location}</span></td>
                         <td className="p-3 text-muted-foreground hidden lg:table-cell">{co.estimated_size}</td>
                         <td className="p-3"><RelevanceBar score={co.relevance_score} /></td>
-                        <td className="p-3 hidden xl:table-cell">{co.source_segment ? <InlineBadge variant="muted">{co.source_segment}</InlineBadge> : <span className="text-xs text-muted-foreground">-</span>}</td>
+                        <td className="p-3 hidden xl:table-cell">{co.source_segment === 'File Upload' ? <InlineBadge variant="accent"><FiUpload className="w-3 h-3 mr-0.5" />Uploaded</InlineBadge> : co.source_segment ? <InlineBadge variant="muted">{co.source_segment}</InlineBadge> : <span className="text-xs text-muted-foreground">-</span>}</td>
                         <td className="p-3">
                           <div className="flex items-center gap-1">
                             <button onClick={() => setExpandedRow(expandedRow === co.name ? null : co.name)} className="p-1 rounded hover:bg-muted text-muted-foreground">
