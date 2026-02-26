@@ -14,7 +14,7 @@ import {
 import { HiOutlineSparkles, HiOutlineBuildingOffice2 } from 'react-icons/hi2'
 
 // ─── AGENT IDS ───────────────────────────────────────────────────────────────
-const DISCOVERY_AGENT_ID = '699fb657d50b8c75c7cbeb2f'
+const DISCOVERY_MANAGER_ID = '699fbc2c8d78b3e323becf81'
 const ENRICHMENT_AGENT_ID = '699fb657119509164a42675b'
 const CONTACT_AGENT_ID = '699fb67d511be0527fc9338e'
 
@@ -60,8 +60,15 @@ interface Company {
   relevance_score: number
   relevance_reasoning: string
   website: string
+  source_segment?: string
   selected?: boolean
   note?: string
+}
+
+interface SegmentStrategy {
+  segment_name: string
+  target_count: number
+  actual_count: number
 }
 
 interface Revenue {
@@ -139,6 +146,7 @@ interface CampaignFilters {
   geography?: string
   sizeRange?: string
   industries?: string[]
+  targetCount?: number
 }
 
 interface Campaign {
@@ -158,6 +166,8 @@ interface Campaign {
   enrichmentSummary?: string
   contactSummary?: string
   totalContactsFound?: number
+  segmentationStrategy?: SegmentStrategy[]
+  duplicatesRemoved?: number
 }
 
 type AppView = 'dashboard' | 'campaign'
@@ -169,12 +179,12 @@ function parseAgentResult(result: AIAgentResponse): any {
 
   const data = result?.response?.result
   if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-    if (data.companies || data.enriched_companies || data.company_contacts) {
+    if (data.companies || data.enriched_companies || data.company_contacts || data.segmentation_strategy) {
       return data
     }
     if (data.result && typeof data.result === 'object') {
       const nested = data.result
-      if (nested.companies || nested.enriched_companies || nested.company_contacts) {
+      if (nested.companies || nested.enriched_companies || nested.company_contacts || nested.segmentation_strategy) {
         return nested
       }
     }
@@ -184,18 +194,18 @@ function parseAgentResult(result: AIAgentResponse): any {
     try {
       const parsed = parseLLMJson(result.raw_response)
       if (parsed && typeof parsed === 'object') {
-        if (parsed.companies || parsed.enriched_companies || parsed.company_contacts) {
+        if (parsed.companies || parsed.enriched_companies || parsed.company_contacts || parsed.segmentation_strategy) {
           return parsed
         }
         if (parsed.result && typeof parsed.result === 'object') {
           const nested = parsed.result
-          if (nested.companies || nested.enriched_companies || nested.company_contacts) {
+          if (nested.companies || nested.enriched_companies || nested.company_contacts || nested.segmentation_strategy) {
             return nested
           }
         }
         if (parsed.response?.result) {
           const nested = parsed.response.result
-          if (nested.companies || nested.enriched_companies || nested.company_contacts) {
+          if (nested.companies || nested.enriched_companies || nested.company_contacts || nested.segmentation_strategy) {
             return nested
           }
         }
@@ -457,8 +467,8 @@ function InlineBadge({ children, variant = 'default' }: { children: React.ReactN
 // ─── AGENT STATUS ────────────────────────────────────────────────────────────
 function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
   const agents = [
-    { id: DISCOVERY_AGENT_ID, name: 'Company Discovery', desc: 'Perplexity sonar-pro: researches target companies', icon: FiSearch },
-    { id: ENRICHMENT_AGENT_ID, name: 'Company Enrichment', desc: 'Perplexity sonar-pro: enriches with business intel', icon: FiDatabase },
+    { id: DISCOVERY_MANAGER_ID, name: 'Discovery Manager', desc: 'GPT-4.1: segments & orchestrates multi-agent discovery', icon: FiTarget },
+    { id: ENRICHMENT_AGENT_ID, name: 'Company Enrichment', desc: 'Gemini 2.5 Pro: enriches with Google Search grounding', icon: FiDatabase },
     { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'GPT-4.1 + Apollo: finds verified contacts', icon: FiUsers },
   ]
   return (
@@ -648,6 +658,7 @@ function NewCampaignModal({ open, onClose, onCreate }: {
   const [geography, setGeography] = useState('')
   const [sizeRange, setSizeRange] = useState('')
   const [industries, setIndustries] = useState('')
+  const [targetCount, setTargetCount] = useState(50)
   const [showFilters, setShowFilters] = useState(false)
 
   if (!open) return null
@@ -659,12 +670,14 @@ function NewCampaignModal({ open, onClose, onCreate }: {
       geography: geography.trim() || undefined,
       sizeRange: sizeRange.trim() || undefined,
       industries: parsedIndustries.length > 0 ? parsedIndustries : undefined,
+      targetCount,
     })
     setName('')
     setDirective('')
     setGeography('')
     setSizeRange('')
     setIndustries('')
+    setTargetCount(50)
     setShowFilters(false)
   }
 
@@ -683,6 +696,18 @@ function NewCampaignModal({ open, onClose, onCreate }: {
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Business Directive *</label>
             <textarea value={directive} onChange={e => setDirective(e.target.value)} placeholder="Describe your ideal target companies, their characteristics, industry focus, size range, and any specific criteria..." rows={5} className="w-full px-3 py-2.5 rounded-lg bg-background border border-border/30 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none leading-relaxed" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Target Company Count</label>
+            <div className="flex flex-wrap gap-2">
+              {[50, 100, 200, 300, 500].map(count => (
+                <button key={count} onClick={() => setTargetCount(count)} className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${targetCount === count ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
+                  {count}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1.5">Higher counts use multi-segment parallel research for broader coverage.</p>
           </div>
 
           <button onClick={() => setShowFilters(!showFilters)} className="flex items-center gap-1 text-sm text-primary font-medium hover:underline">
@@ -758,6 +783,31 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
             <HiOutlineSparkles className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
             <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.searchSummary)}</div>
           </div>
+          {(campaign.duplicatesRemoved ?? 0) > 0 && (
+            <p className="text-xs text-muted-foreground mt-2 ml-7">{campaign.duplicatesRemoved} duplicate companies removed during consolidation.</p>
+          )}
+        </div>
+      )}
+
+      {Array.isArray(campaign.segmentationStrategy) && campaign.segmentationStrategy.length > 0 && (
+        <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <FiLayers className="w-3.5 h-3.5" /> Segmentation Strategy
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            {campaign.segmentationStrategy.map((seg, i) => (
+              <div key={i} className="bg-muted/30 rounded-lg p-3 text-sm">
+                <p className="font-medium text-foreground truncate">{seg.segment_name}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-muted-foreground">Target: {seg.target_count}</span>
+                  <span className="text-foreground font-medium">Found: {seg.actual_count}</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-muted mt-1.5 overflow-hidden">
+                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min((seg.actual_count / Math.max(seg.target_count, 1)) * 100, 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -771,7 +821,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
       {loading && (
         <div className="space-y-0 bg-card rounded-lg border border-border/30 overflow-hidden mb-5">
           <div className="p-4 border-b border-border/20 flex items-center gap-2 text-sm text-primary font-medium">
-            <FiRefreshCw className="w-4 h-4 animate-spin" /> Researching target companies...
+            <FiRefreshCw className="w-4 h-4 animate-spin" /> Discovery Manager is segmenting and researching target companies across multiple search strategies...
           </div>
           {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
         </div>
@@ -781,7 +831,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
         <div className="text-center py-16 bg-card rounded-lg border border-border/30">
           <FiSearch className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">Ready to discover companies</h3>
-          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">Click the button below to have the AI research and identify target companies based on your campaign directive.</p>
+          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">The Discovery Manager will segment your directive and coordinate parallel researcher agents to find up to {campaign.filters?.targetCount ?? 50} target companies.</p>
           <button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
             <FiSearch className="w-4 h-4" /> Generate Prospect List
           </button>
@@ -813,6 +863,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                     <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden lg:table-cell">Location</th>
                     <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden lg:table-cell">Size</th>
                     <th className="p-3 font-serif font-semibold text-foreground tracking-wide">Relevance</th>
+                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden xl:table-cell">Segment</th>
                     <th className="p-3 w-20"></th>
                   </tr>
                 </thead>
@@ -837,6 +888,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                         <td className="p-3 text-muted-foreground hidden lg:table-cell"><span className="flex items-center gap-1"><FiMapPin className="w-3 h-3" /> {co.hq_location}</span></td>
                         <td className="p-3 text-muted-foreground hidden lg:table-cell">{co.estimated_size}</td>
                         <td className="p-3"><RelevanceBar score={co.relevance_score} /></td>
+                        <td className="p-3 hidden xl:table-cell">{co.source_segment ? <InlineBadge variant="muted">{co.source_segment}</InlineBadge> : <span className="text-xs text-muted-foreground">-</span>}</td>
                         <td className="p-3">
                           <div className="flex items-center gap-1">
                             <button onClick={() => setExpandedRow(expandedRow === co.name ? null : co.name)} className="p-1 rounded hover:bg-muted text-muted-foreground">
@@ -850,7 +902,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                       </tr>
                       {expandedRow === co.name && (
                         <tr>
-                          <td colSpan={7} className="px-6 py-4 bg-muted/20">
+                          <td colSpan={8} className="px-6 py-4 bg-muted/20">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
                                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Relevance Reasoning</h4>
@@ -863,6 +915,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                                   <p><span className="text-muted-foreground">Location:</span> <span className="text-foreground">{co.hq_location}</span></p>
                                   <p><span className="text-muted-foreground">Est. Size:</span> <span className="text-foreground">{co.estimated_size}</span></p>
                                   <p><span className="text-muted-foreground">Score:</span> <span className="text-foreground">{co.relevance_score}/10</span></p>
+                                  {co.source_segment && <p><span className="text-muted-foreground">Segment:</span> <span className="text-foreground">{co.source_segment}</span></p>}
                                 </div>
                               </div>
                             </div>
@@ -927,7 +980,7 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
 
       {loading && (
         <div className="space-y-4 mb-5">
-          <div className="flex items-center gap-2 text-sm text-primary font-medium"><FiRefreshCw className="w-4 h-4 animate-spin" /> Enriching company data with intelligence signals...</div>
+          <div className="flex items-center gap-2 text-sm text-primary font-medium"><FiRefreshCw className="w-4 h-4 animate-spin" /> Enriching company data via Gemini 2.5 Pro with Google Search grounding...</div>
           {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       )}
@@ -1315,11 +1368,12 @@ export default function Page() {
   const runDiscovery = useCallback(async (campaign: Campaign) => {
     setLoading(true)
     setError(null)
-    setActiveAgentId(DISCOVERY_AGENT_ID)
-    const filtersStr = campaign.filters ? JSON.stringify(campaign.filters) : 'No specific filters'
-    const message = `Business directive: ${campaign.directive}. Filters: ${filtersStr}. Find 20-50 target companies.`
+    setActiveAgentId(DISCOVERY_MANAGER_ID)
+    const targetCount = campaign.filters?.targetCount ?? 50
+    const filtersStr = campaign.filters ? JSON.stringify({ geography: campaign.filters.geography, sizeRange: campaign.filters.sizeRange, industries: campaign.filters.industries }) : 'No specific filters'
+    const message = `Business directive: ${campaign.directive}. Target company count: ${targetCount}. Filters: ${filtersStr}. Segment the search appropriately and find ${targetCount} target companies, deduplicate, and return a consolidated list.`
     try {
-      const result = await callAIAgent(message, DISCOVERY_AGENT_ID)
+      const result = await callAIAgent(message, DISCOVERY_MANAGER_ID)
       const parsed = parseAgentResult(result)
       if (!parsed) {
         setError('Failed to parse discovery results. Please try again.')
@@ -1331,10 +1385,21 @@ export default function Page() {
         ? parsed.companies.map((c: any) => ({
             name: c?.name ?? '', industry: c?.industry ?? '', hq_location: c?.hq_location ?? '',
             estimated_size: c?.estimated_size ?? '', relevance_score: typeof c?.relevance_score === 'number' ? c.relevance_score : 0,
-            relevance_reasoning: c?.relevance_reasoning ?? '', website: c?.website ?? '', selected: true,
+            relevance_reasoning: c?.relevance_reasoning ?? '', website: c?.website ?? '',
+            source_segment: c?.source_segment ?? '', selected: true,
           }))
         : []
-      updateCampaign({ ...campaign, companies, stage: 'discovery', searchSummary: parsed?.search_summary ?? '', updatedAt: new Date().toISOString() })
+      const segmentationStrategy: SegmentStrategy[] = Array.isArray(parsed?.segmentation_strategy)
+        ? parsed.segmentation_strategy.map((s: any) => ({
+            segment_name: s?.segment_name ?? '', target_count: typeof s?.target_count === 'number' ? s.target_count : 0,
+            actual_count: typeof s?.actual_count === 'number' ? s.actual_count : 0,
+          }))
+        : []
+      const duplicatesRemoved = typeof parsed?.duplicates_removed === 'number' ? parsed.duplicates_removed : 0
+      updateCampaign({
+        ...campaign, companies, stage: 'discovery', searchSummary: parsed?.search_summary ?? '',
+        segmentationStrategy, duplicatesRemoved, updatedAt: new Date().toISOString(),
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Discovery failed. Please try again.')
     }
@@ -1511,6 +1576,7 @@ export default function Page() {
                   <p className="text-sm text-muted-foreground leading-relaxed">{currentCampaign.directive}</p>
                   {currentCampaign.filters && (
                     <div className="flex flex-wrap gap-2 mt-2">
+                      {currentCampaign.filters.targetCount && <InlineBadge variant="accent"><FiTarget className="w-3 h-3 mr-0.5" />Target: {currentCampaign.filters.targetCount} companies</InlineBadge>}
                       {currentCampaign.filters.geography && <InlineBadge variant="muted"><FiMapPin className="w-3 h-3 mr-0.5" />{currentCampaign.filters.geography}</InlineBadge>}
                       {currentCampaign.filters.sizeRange && <InlineBadge variant="muted"><FiUsers className="w-3 h-3 mr-0.5" />{currentCampaign.filters.sizeRange}</InlineBadge>}
                       {Array.isArray(currentCampaign.filters.industries) && currentCampaign.filters.industries.map((ind, i) => <InlineBadge key={i} variant="muted"><FiBriefcase className="w-3 h-3 mr-0.5" />{ind}</InlineBadge>)}

@@ -1,0 +1,56 @@
+{
+  "agent_name": "Discovery Manager Agent",
+  "agent_id": "699fbc2c8d78b3e323becf81",
+  "description": "Orchestrates large-scale company discovery by segmenting business directives into focused search strategies and delegating to Discovery Researcher sub-agents. Handles deduplication, quality scoring, and result consolidation. Can scale from 50 to 500+ companies.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "companies": [
+      {
+        "name": "string",
+        "industry": "string",
+        "hq_location": "string",
+        "estimated_size": "string",
+        "relevance_score": "number",
+        "relevance_reasoning": "string",
+        "website": "string",
+        "source_segment": "string"
+      }
+    ],
+    "segmentation_strategy": [
+      {
+        "segment_name": "string",
+        "target_count": "number",
+        "actual_count": "number"
+      }
+    ],
+    "search_summary": "string",
+    "total_found": "number",
+    "duplicates_removed": "number"
+  },
+  "example_response": {
+    "companies": [
+      {
+        "name": "sample string",
+        "industry": "sample string",
+        "hq_location": "sample string",
+        "estimated_size": "sample string",
+        "relevance_score": 0,
+        "relevance_reasoning": "sample string",
+        "website": "sample string",
+        "source_segment": "sample string"
+      }
+    ],
+    "segmentation_strategy": [
+      {
+        "segment_name": "sample string",
+        "target_count": 0,
+        "actual_count": 0
+      }
+    ],
+    "search_summary": "sample string",
+    "total_found": 0,
+    "duplicates_removed": 0
+  }
+}

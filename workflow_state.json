@@ -2,23 +2,43 @@
   "workflow": "ProspectIQ - Intelligent Prospecting & Enrichment Platform",
   "agents": [
     {
-      "agent_id": "699fb657d50b8c75c7cbeb2f",
-      "agent_name": "Company Discovery Agent",
-      "node_id": "company_discovery",
+      "agent_id": "699fbc2c8d78b3e323becf81",
+      "agent_name": "Discovery Manager Agent",
+      "node_id": "discovery_manager",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false,
+      "managed_agents": [
+        {
+          "agent_id": "699fbc147aab67831bf8b7a7",
+          "agent_name": "Discovery Researcher Agent"
+        }
+      ],
+      "replaces": "699fb657d50b8c75c7cbeb2f"
+    },
+    {
+      "agent_id": "699fbc147aab67831bf8b7a7",
+      "agent_name": "Discovery Researcher Agent",
+      "node_id": "discovery_researcher",
       "provider": "perplexity",
       "model": "sonar-pro",
       "agent_type": "json",
       "has_tools": false,
       "has_file_output": false,
       "has_image_output": false,
-      "has_voice": false
+      "has_voice": false,
+      "is_sub_agent_of": "699fbc2c8d78b3e323becf81"
     },
     {
       "agent_id": "699fb657119509164a42675b",
       "agent_name": "Company Enrichment Agent",
       "node_id": "company_enrichment",
-      "provider": "perplexity",
-      "model": "sonar-pro",
+      "provider": "google",
+      "model": "gemini-2.5-pro",
       "agent_type": "json",
       "has_tools": false,
       "has_file_output": false,
@@ -46,7 +66,7 @@
     }
   ],
   "workflow_structure": {
-    "pattern": "sequential",
-    "flow": "input_node -> company_discovery -> company_enrichment -> contact_finder -> output_node"
+    "pattern": "manager-subagent + sequential",
+    "flow": "input_node -> discovery_manager <-> discovery_researcher -> company_enrichment -> contact_finder -> output_node"
   }
 }

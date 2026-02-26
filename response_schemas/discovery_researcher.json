@@ -1,0 +1,42 @@
+{
+  "agent_id": "699fbc147aab67831bf8b7a7",
+  "agent_name": "Discovery Researcher Agent",
+  "agent_type": "json",
+  "accessor": "result",
+  "has_module_outputs": false,
+  "is_sub_agent_of": "699fbc2c8d78b3e323becf81",
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "DiscoveryResearcherResponse",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "segment_name": { "type": "string" },
+          "companies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "industry": { "type": "string" },
+                "hq_location": { "type": "string" },
+                "estimated_size": { "type": "string" },
+                "relevance_score": { "type": "number" },
+                "relevance_reasoning": { "type": "string" },
+                "website": { "type": "string" }
+              },
+              "required": ["name", "industry", "hq_location", "estimated_size", "relevance_score", "relevance_reasoning", "website"],
+              "additionalProperties": false
+            }
+          },
+          "segment_summary": { "type": "string" },
+          "total_found": { "type": "number" }
+        },
+        "required": ["segment_name", "companies", "segment_summary", "total_found"],
+        "additionalProperties": false
+      }
+    }
+  }
+}
