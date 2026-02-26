@@ -1091,13 +1091,14 @@ function EnrichmentDetailPanel({ ec, label }: { ec: EnrichedCompany; label: stri
 }
 
 // ─── ENRICHMENT VIEW (Side-by-Side Comparison) ──────────────────────────────
-function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, onFindContacts }: {
+function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, onFindContacts, enrichmentProgress }: {
   campaign: Campaign
   onUpdateCampaign: (c: Campaign) => void
   loading: boolean
   error: string | null
   onRetry: () => void
   onFindContacts: () => void
+  enrichmentProgress?: { current: number; total: number; completed: string[] } | null
 }) {
   const geminiData = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
   const sonarData = Array.isArray(campaign.enrichedCompaniesSonar) ? campaign.enrichedCompaniesSonar : []
@@ -1190,7 +1191,28 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
 
       {loading && (
         <div className="mb-5">
-          <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3"><FiRefreshCw className="w-4 h-4 animate-spin" /> Running both enrichment models in parallel...</div>
+          <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3">
+            <FiRefreshCw className="w-4 h-4 animate-spin" />
+            {enrichmentProgress
+              ? `Enriching companies: ${enrichmentProgress.current} of ${enrichmentProgress.total} processed (Gemini + Sonar in parallel per batch)...`
+              : 'Running both enrichment models in parallel...'}
+          </div>
+          {enrichmentProgress && (
+            <div className="mb-4">
+              <div className="w-full h-2 rounded-full bg-muted overflow-hidden mb-2">
+                <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${Math.max((enrichmentProgress.current / Math.max(enrichmentProgress.total, 1)) * 100, 5)}%` }} />
+              </div>
+              {enrichmentProgress.completed.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {enrichmentProgress.completed.map((name, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <FiCheckCircle className="w-3 h-3" /> {name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-3">
               <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiDatabase className="w-3 h-3" /> Gemini 2.5 Pro</div>
@@ -1463,6 +1485,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null)
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; completed: string[] } | null>(null)
 
   useEffect(() => {
     const stored = loadCampaigns()
@@ -1607,67 +1630,113 @@ export default function Page() {
     setLoading(true)
     setError(null)
     setActiveAgentId(ENRICHMENT_GEMINI_ID)
-    const companiesPayload = selected.map(c => ({ name: c.name, industry: c.industry, hq_location: c.hq_location, estimated_size: c.estimated_size, website: c.website }))
-    const message = `Enrich the following companies with revenue, news, C-suite changes, growth indicators, and competitive intelligence: ${JSON.stringify(companiesPayload)}`
+
+    // Batch companies in groups of 3 to ensure each gets thorough research
+    const BATCH_SIZE = 3
+    const batches: typeof selected[] = []
+    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+      batches.push(selected.slice(i, i + BATCH_SIZE))
+    }
+
+    let allGeminiEnriched: EnrichedCompany[] = []
+    let allSonarEnriched: EnrichedCompany[] = []
+    let allGeminiSummaries: string[] = []
+    let allSonarSummaries: string[] = []
+    let totalGeminiTime = 0
+    let totalSonarTime = 0
+    let batchErrors: string[] = []
+
+    setEnrichmentProgress({ current: 0, total: selected.length, completed: [] })
 
     try {
-      // Run both agents in parallel
-      const geminiStart = Date.now()
-      const sonarStart = Date.now()
-      const [geminiResult, sonarResult] = await Promise.allSettled([
-        callAIAgent(message, ENRICHMENT_GEMINI_ID),
-        callAIAgent(message, ENRICHMENT_SONAR_ID),
-      ])
+      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+        const batch = batches[batchIdx]
+        const batchPayload = batch.map(c => ({ name: c.name, industry: c.industry, hq_location: c.hq_location, estimated_size: c.estimated_size, website: c.website }))
+        const batchMessage = `Enrich the following ${batchPayload.length} companies with revenue, recent news, C-suite changes, growth indicators, and competitive intelligence. Research EACH company thoroughly — do not skip any.\n\nCompanies to enrich:\n${JSON.stringify(batchPayload, null, 2)}`
 
-      let geminiEnriched: EnrichedCompany[] = []
-      let sonarEnriched: EnrichedCompany[] = []
-      let geminiSummary = ''
-      let sonarSummary = ''
-      let geminiTime: number | undefined
-      let sonarTime: number | undefined
+        setEnrichmentProgress(prev => ({
+          current: batchIdx * BATCH_SIZE,
+          total: selected.length,
+          completed: prev?.completed ?? [],
+        }))
 
-      // Parse Gemini results
-      if (geminiResult.status === 'fulfilled') {
-        geminiTime = Date.now() - geminiStart
-        const parsed = parseAgentResult(geminiResult.value)
-        if (parsed) {
-          geminiEnriched = parseEnrichmentResult(parsed)
-          geminiSummary = parsed?.enrichment_summary ?? ''
+        // Alternate active agent indicator between Gemini and Sonar
+        setActiveAgentId(batchIdx % 2 === 0 ? ENRICHMENT_GEMINI_ID : ENRICHMENT_SONAR_ID)
+
+        const batchStart = Date.now()
+        const [geminiResult, sonarResult] = await Promise.allSettled([
+          callAIAgent(batchMessage, ENRICHMENT_GEMINI_ID),
+          callAIAgent(batchMessage, ENRICHMENT_SONAR_ID),
+        ])
+        const batchTime = Date.now() - batchStart
+
+        // Parse Gemini batch results
+        if (geminiResult.status === 'fulfilled') {
+          totalGeminiTime += batchTime
+          const parsed = parseAgentResult(geminiResult.value)
+          if (parsed) {
+            const enriched = parseEnrichmentResult(parsed)
+            allGeminiEnriched = [...allGeminiEnriched, ...enriched]
+            if (parsed?.enrichment_summary) allGeminiSummaries.push(parsed.enrichment_summary)
+          }
+        } else {
+          console.warn(`[runEnrichment] Gemini batch ${batchIdx + 1} failed:`, geminiResult.reason)
         }
-      }
 
-      // Parse Sonar results
-      if (sonarResult.status === 'fulfilled') {
-        sonarTime = Date.now() - sonarStart
-        const parsed = parseAgentResult(sonarResult.value)
-        if (parsed) {
-          sonarEnriched = parseEnrichmentResult(parsed)
-          sonarSummary = parsed?.enrichment_summary ?? ''
+        // Parse Sonar batch results
+        if (sonarResult.status === 'fulfilled') {
+          totalSonarTime += batchTime
+          const parsed = parseAgentResult(sonarResult.value)
+          if (parsed) {
+            const enriched = parseEnrichmentResult(parsed)
+            allSonarEnriched = [...allSonarEnriched, ...enriched]
+            if (parsed?.enrichment_summary) allSonarSummaries.push(parsed.enrichment_summary)
+          }
+        } else {
+          console.warn(`[runEnrichment] Sonar batch ${batchIdx + 1} failed:`, sonarResult.reason)
         }
+
+        // Check if this batch produced any results
+        const batchGeminiCount = geminiResult.status === 'fulfilled' ? parseEnrichmentResult(parseAgentResult(geminiResult.value) || {}).length : 0
+        const batchSonarCount = sonarResult.status === 'fulfilled' ? parseEnrichmentResult(parseAgentResult(sonarResult.value) || {}).length : 0
+        if (batchGeminiCount === 0 && batchSonarCount === 0) {
+          batchErrors.push(`Batch ${batchIdx + 1} (${batch.map(c => c.name).join(', ')}) returned no results`)
+        }
+
+        // Update progress with completed company names
+        const completedNames = batch.map(c => c.name)
+        setEnrichmentProgress(prev => ({
+          current: Math.min((batchIdx + 1) * BATCH_SIZE, selected.length),
+          total: selected.length,
+          completed: [...(prev?.completed ?? []), ...completedNames],
+        }))
+
+        // Progressively update campaign so user sees results appearing
+        updateCampaign({
+          ...campaign,
+          enrichedCompanies: allGeminiEnriched,
+          enrichedCompaniesSonar: allSonarEnriched,
+          stage: 'enrichment',
+          enrichmentSummary: allGeminiSummaries.join(' '),
+          enrichmentSummarySonar: allSonarSummaries.join(' '),
+          enrichmentTimings: { gemini: totalGeminiTime, sonar: totalSonarTime },
+          updatedAt: new Date().toISOString(),
+        })
       }
 
-      if (geminiEnriched.length === 0 && sonarEnriched.length === 0) {
-        setError('Both enrichment models failed to return results. Please try again.')
-        setLoading(false)
-        setActiveAgentId(null)
-        return
+      if (allGeminiEnriched.length === 0 && allSonarEnriched.length === 0) {
+        setError('Both enrichment models failed to return results across all batches. Please try again.')
+      } else if (batchErrors.length > 0) {
+        console.warn('[runEnrichment] Some batches had issues:', batchErrors)
       }
 
-      updateCampaign({
-        ...campaign,
-        enrichedCompanies: geminiEnriched,
-        enrichedCompaniesSonar: sonarEnriched,
-        stage: 'enrichment',
-        enrichmentSummary: geminiSummary,
-        enrichmentSummarySonar: sonarSummary,
-        enrichmentTimings: { gemini: geminiTime, sonar: sonarTime },
-        updatedAt: new Date().toISOString(),
-      })
+      console.log(`[runEnrichment] Complete: ${allGeminiEnriched.length} Gemini, ${allSonarEnriched.length} Sonar enriched across ${batches.length} batches`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrichment failed. Please try again.')
     }
     setLoading(false)
     setActiveAgentId(null)
+    setEnrichmentProgress(null)
   }, [updateCampaign])
 
   const runContactFinder = useCallback(async (campaign: Campaign) => {
@@ -1837,6 +1906,7 @@ export default function Page() {
                       updateCampaign(updated)
                       runContactFinder(updated)
                     }}
+                    enrichmentProgress={enrichmentProgress}
                   />
                 )}
 
