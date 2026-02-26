@@ -4,7 +4,7 @@
   "agent_type": "json",
   "accessor": "result",
   "has_module_outputs": false,
-  "is_sub_agent_of": "699fbc2c8d78b3e323becf81",
+  "is_sub_agent_of": "699fe64260c6ee660b2b0c26",
   "response_format": {
     "type": "json_schema",
     "json_schema": {
@@ -14,27 +14,32 @@
         "type": "object",
         "properties": {
           "segment_name": { "type": "string" },
-          "companies": {
+          "search_queries": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "findings": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "name": { "type": "string" },
-                "industry": { "type": "string" },
-                "hq_location": { "type": "string" },
-                "estimated_size": { "type": "string" },
-                "relevance_score": { "type": "number" },
-                "relevance_reasoning": { "type": "string" },
-                "website": { "type": "string" }
+                "source_title": { "type": "string" },
+                "source_type": { "type": "string" },
+                "content": { "type": "string" },
+                "companies_mentioned": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "date_published": { "type": "string" }
               },
-              "required": ["name", "industry", "hq_location", "estimated_size", "relevance_score", "relevance_reasoning", "website"],
+              "required": ["source_title", "source_type", "content", "companies_mentioned", "date_published"],
               "additionalProperties": false
             }
           },
           "segment_summary": { "type": "string" },
-          "total_found": { "type": "number" }
+          "total_sources": { "type": "number" }
         },
-        "required": ["segment_name", "companies", "segment_summary", "total_found"],
+        "required": ["segment_name", "search_queries", "findings", "segment_summary", "total_sources"],
         "additionalProperties": false
       }
     }
