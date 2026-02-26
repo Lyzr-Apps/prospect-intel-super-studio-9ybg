@@ -46,6 +46,19 @@
       "has_voice": false
     },
     {
+      "agent_id": "699fbeb5511be0527fc9339b",
+      "agent_name": "Company Enrichment Agent (Sonar Pro)",
+      "node_id": "company_enrichment_sonar",
+      "provider": "perplexity",
+      "model": "sonar-pro",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false,
+      "is_comparison_variant_of": "699fb657119509164a42675b"
+    },
+    {
       "agent_id": "699fb67d511be0527fc9338e",
       "agent_name": "Contact Finder Agent",
       "node_id": "contact_finder",

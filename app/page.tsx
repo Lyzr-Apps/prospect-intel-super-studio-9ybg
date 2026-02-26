@@ -15,7 +15,8 @@ import { HiOutlineSparkles, HiOutlineBuildingOffice2 } from 'react-icons/hi2'
 
 // ─── AGENT IDS ───────────────────────────────────────────────────────────────
 const DISCOVERY_MANAGER_ID = '699fbc2c8d78b3e323becf81'
-const ENRICHMENT_AGENT_ID = '699fb657119509164a42675b'
+const ENRICHMENT_GEMINI_ID = '699fb657119509164a42675b'
+const ENRICHMENT_SONAR_ID = '699fbeb5511be0527fc9339b'
 const CONTACT_AGENT_ID = '699fb67d511be0527fc9338e'
 
 // ─── THEME ───────────────────────────────────────────────────────────────────
@@ -164,10 +165,13 @@ interface Campaign {
   priority_flags: string[]
   searchSummary?: string
   enrichmentSummary?: string
+  enrichmentSummarySonar?: string
   contactSummary?: string
   totalContactsFound?: number
   segmentationStrategy?: SegmentStrategy[]
   duplicatesRemoved?: number
+  enrichedCompaniesSonar?: EnrichedCompany[]
+  enrichmentTimings?: { gemini?: number; sonar?: number }
 }
 
 type AppView = 'dashboard' | 'campaign'
@@ -468,8 +472,9 @@ function InlineBadge({ children, variant = 'default' }: { children: React.ReactN
 function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
   const agents = [
     { id: DISCOVERY_MANAGER_ID, name: 'Discovery Manager', desc: 'GPT-4.1: segments & orchestrates multi-agent discovery', icon: FiTarget },
-    { id: ENRICHMENT_AGENT_ID, name: 'Company Enrichment', desc: 'Gemini 2.5 Pro: enriches with Google Search grounding', icon: FiDatabase },
-    { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'GPT-4.1 + Apollo: finds verified contacts', icon: FiUsers },
+    { id: ENRICHMENT_GEMINI_ID, name: 'Enrichment (Gemini)', desc: 'Gemini 2.5 Pro: Google Search grounding', icon: FiDatabase },
+    { id: ENRICHMENT_SONAR_ID, name: 'Enrichment (Sonar)', desc: 'Perplexity sonar-pro: web research', icon: FiSearch },
+    { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'GPT-4.1 + Apollo: verified contacts', icon: FiUsers },
   ]
   return (
     <div className="rounded-lg p-4 mt-auto border-t" style={{ borderColor: 'hsl(35 20% 85%)' }}>
@@ -934,7 +939,106 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
   )
 }
 
-// ─── ENRICHMENT VIEW ─────────────────────────────────────────────────────────
+// ─── ENRICHMENT DETAIL PANEL (reusable for each model side) ─────────────────
+function EnrichmentDetailPanel({ ec, label }: { ec: EnrichedCompany; label: string }) {
+  const newsCount = Array.isArray(ec.recent_news) ? ec.recent_news.length : 0
+  const csuiteCount = Array.isArray(ec.csuite_changes) ? ec.csuite_changes.length : 0
+  const growthCount = Array.isArray(ec.growth_indicators) ? ec.growth_indicators.length : 0
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-1">
+        <InlineBadge variant={label === 'Gemini 2.5 Pro' ? 'accent' : 'default'}>{label}</InlineBadge>
+      </div>
+
+      {/* Revenue */}
+      {ec.revenue && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiDollarSign className="w-3 h-3" /> Revenue</h4>
+          <div className="bg-muted/30 rounded-lg p-2.5 text-sm">
+            <p className="font-semibold text-foreground">{ec.revenue?.figure ?? 'N/A'}</p>
+            <p className="text-xs text-muted-foreground">Year: {ec.revenue?.year ?? 'N/A'} | Source: {ec.revenue?.source ?? 'N/A'}</p>
+          </div>
+        </div>
+      )}
+
+      {/* News */}
+      {newsCount > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiFlag className="w-3 h-3" /> News ({newsCount})</h4>
+          <div className="space-y-1.5">
+            {ec.recent_news.map((n, i) => (
+              <div key={i} className="bg-muted/30 rounded-lg p-2.5">
+                <div className="flex items-start justify-between gap-1">
+                  <h5 className="text-xs font-medium text-foreground leading-snug">{n.headline}</h5>
+                  <span className="text-[10px] text-muted-foreground flex-shrink-0">{n.date}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.summary}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* C-Suite */}
+      {csuiteCount > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiUsers className="w-3 h-3" /> C-Suite ({csuiteCount})</h4>
+          <div className="space-y-1.5">
+            {ec.csuite_changes.map((cs, i) => (
+              <div key={i} className="bg-muted/30 rounded-lg p-2.5 text-xs">
+                <p className="font-medium text-foreground">{cs.name}</p>
+                <p className="text-muted-foreground">{cs.previous_role} <FiArrowRight className="w-2.5 h-2.5 inline mx-0.5" /> {cs.new_role}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{cs.date}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Growth */}
+      {growthCount > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiTrendingUp className="w-3 h-3" /> Growth ({growthCount})</h4>
+          <div className="flex flex-wrap gap-1.5">
+            {ec.growth_indicators.map((gi, i) => (
+              <div key={i} className="bg-green-50 border border-green-200 rounded px-2 py-1 text-xs">
+                <span className="font-medium text-green-800">{gi.type}:</span> <span className="text-green-700">{gi.detail}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Competitive Intel */}
+      {ec.competitive_intel && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiBarChart2 className="w-3 h-3" /> Competitive Intel</h4>
+          <div className="space-y-2">
+            <div className="bg-muted/30 rounded-lg p-2.5">
+              <p className="text-[10px] font-medium text-muted-foreground mb-1">Vendors</p>
+              <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.vendors) && ec.competitive_intel.vendors.length > 0 ? ec.competitive_intel.vendors.map((v, i) => <InlineBadge key={i} variant="default">{v}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None</span>}</div>
+            </div>
+            <div className="bg-muted/30 rounded-lg p-2.5">
+              <p className="text-[10px] font-medium text-muted-foreground mb-1">Partners</p>
+              <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.partners) && ec.competitive_intel.partners.length > 0 ? ec.competitive_intel.partners.map((p, i) => <InlineBadge key={i} variant="success">{p}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None</span>}</div>
+            </div>
+            <div className="bg-muted/30 rounded-lg p-2.5">
+              <p className="text-[10px] font-medium text-muted-foreground mb-1">Competitors</p>
+              <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.competitors) && ec.competitive_intel.competitors.length > 0 ? ec.competitive_intel.competitors.map((c, i) => <InlineBadge key={i} variant="warning">{c}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None</span>}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {newsCount === 0 && csuiteCount === 0 && growthCount === 0 && !ec.revenue && (
+        <p className="text-sm text-muted-foreground italic">No data returned from {label}</p>
+      )}
+    </div>
+  )
+}
+
+// ─── ENRICHMENT VIEW (Side-by-Side Comparison) ──────────────────────────────
 function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, onFindContacts }: {
   campaign: Campaign
   onUpdateCampaign: (c: Campaign) => void
@@ -943,30 +1047,84 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
   onRetry: () => void
   onFindContacts: () => void
 }) {
-  const enriched = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
+  const geminiData = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
+  const sonarData = Array.isArray(campaign.enrichedCompaniesSonar) ? campaign.enrichedCompaniesSonar : []
+  const hasComparison = geminiData.length > 0 && sonarData.length > 0
+  const hasSingleResult = geminiData.length > 0 || sonarData.length > 0
+  const displayData = geminiData.length > 0 ? geminiData : sonarData
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
-  const selectedCount = enriched.filter(c => c.selected).length
+  const selectedCount = displayData.filter(c => c.selected).length
+  const [preferredModel, setPreferredModel] = useState<'gemini' | 'sonar' | null>(null)
 
   const toggleSelect = (name: string) => {
-    const updated = enriched.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
-    onUpdateCampaign({ ...campaign, enrichedCompanies: updated, updatedAt: new Date().toISOString() })
+    const updatedGemini = geminiData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
+    const updatedSonar = sonarData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
+    onUpdateCampaign({ ...campaign, enrichedCompanies: updatedGemini, enrichedCompaniesSonar: updatedSonar, updatedAt: new Date().toISOString() })
   }
 
   const togglePriority = (name: string) => {
-    const updated = enriched.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
-    const flags = updated.filter(c => c.priority).map(c => c.company_name)
-    onUpdateCampaign({ ...campaign, enrichedCompanies: updated, priority_flags: flags, updatedAt: new Date().toISOString() })
+    const updatedGemini = geminiData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
+    const flags = updatedGemini.filter(c => c.priority).map(c => c.company_name)
+    const updatedSonar = sonarData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
+    onUpdateCampaign({ ...campaign, enrichedCompanies: updatedGemini, enrichedCompaniesSonar: updatedSonar, priority_flags: flags, updatedAt: new Date().toISOString() })
+  }
+
+  const findSonarMatch = (companyName: string): EnrichedCompany | null => {
+    return sonarData.find(s => s.company_name === companyName) ?? null
+  }
+
+  const handleSelectModel = (model: 'gemini' | 'sonar') => {
+    setPreferredModel(model)
+    if (model === 'sonar' && sonarData.length > 0) {
+      onUpdateCampaign({ ...campaign, enrichedCompanies: sonarData, updatedAt: new Date().toISOString() })
+    } else if (model === 'gemini' && geminiData.length > 0) {
+      onUpdateCampaign({ ...campaign, enrichedCompanies: geminiData, updatedAt: new Date().toISOString() })
+    }
   }
 
   return (
     <div>
       <ProgressStepper stage="enrichment" />
 
-      {campaign.enrichmentSummary && (
+      {/* Comparison header */}
+      {hasComparison && (
+        <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+          <div className="flex items-start gap-2 mb-3">
+            <FiBarChart2 className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-serif font-semibold text-foreground text-sm">Model Comparison: Gemini 2.5 Pro vs Perplexity Sonar Pro</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Both models enriched the same companies in parallel. Compare results side-by-side, then select the model you prefer for this workflow.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {campaign.enrichmentTimings?.gemini != null && (
+              <InlineBadge variant="accent">Gemini: {(campaign.enrichmentTimings.gemini / 1000).toFixed(1)}s</InlineBadge>
+            )}
+            {campaign.enrichmentTimings?.sonar != null && (
+              <InlineBadge variant="default">Sonar: {(campaign.enrichmentTimings.sonar / 1000).toFixed(1)}s</InlineBadge>
+            )}
+            <div className="flex-1" />
+            <div className="flex gap-2">
+              <button onClick={() => handleSelectModel('gemini')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${preferredModel === 'gemini' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
+                Use Gemini 2.5 Pro
+              </button>
+              <button onClick={() => handleSelectModel('sonar')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${preferredModel === 'sonar' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
+                Use Sonar Pro
+              </button>
+            </div>
+          </div>
+          {preferredModel && (
+            <p className="text-xs text-green-700 mt-2 flex items-center gap-1"><FiCheckCircle className="w-3 h-3" /> Selected <strong>{preferredModel === 'gemini' ? 'Gemini 2.5 Pro' : 'Perplexity Sonar Pro'}</strong> as the enrichment source for contacts stage.</p>
+          )}
+        </div>
+      )}
+
+      {/* Summaries */}
+      {(campaign.enrichmentSummary || campaign.enrichmentSummarySonar) && !hasComparison && (
         <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
           <div className="flex items-start gap-2">
             <HiOutlineSparkles className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.enrichmentSummary)}</div>
+            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.enrichmentSummary || campaign.enrichmentSummarySonar || '')}</div>
           </div>
         </div>
       )}
@@ -979,35 +1137,46 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
       )}
 
       {loading && (
-        <div className="space-y-4 mb-5">
-          <div className="flex items-center gap-2 text-sm text-primary font-medium"><FiRefreshCw className="w-4 h-4 animate-spin" /> Enriching company data via Gemini 2.5 Pro with Google Search grounding...</div>
-          {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
+        <div className="mb-5">
+          <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3"><FiRefreshCw className="w-4 h-4 animate-spin" /> Running both enrichment models in parallel...</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiDatabase className="w-3 h-3" /> Gemini 2.5 Pro</div>
+              {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiSearch className="w-3 h-3" /> Sonar Pro</div>
+              {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          </div>
         </div>
       )}
 
-      {!loading && enriched.length === 0 && !error && (
+      {!loading && !hasSingleResult && !error && (
         <div className="text-center py-16 bg-card rounded-lg border border-border/30">
           <FiDatabase className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">No enrichment data yet</h3>
-          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich.</p>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich. Both Gemini 2.5 Pro and Sonar Pro will run in parallel for comparison.</p>
         </div>
       )}
 
-      {enriched.length > 0 && (
+      {hasSingleResult && (
         <>
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <span className="text-sm text-muted-foreground">{selectedCount} of {enriched.length} selected for contact finding</span>
+            <span className="text-sm text-muted-foreground">{selectedCount} of {displayData.length} selected for contact finding</span>
             <button onClick={onFindContacts} disabled={selectedCount === 0 || loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
               <FiUsers className="w-4 h-4" /> Find Contacts ({selectedCount})
             </button>
           </div>
 
           <div className="space-y-3">
-            {enriched.map(ec => {
+            {displayData.map(ec => {
               const isExpanded = expandedCompany === ec.company_name
+              const sonarMatch = findSonarMatch(ec.company_name)
               const newsCount = Array.isArray(ec.recent_news) ? ec.recent_news.length : 0
               const csuiteCount = Array.isArray(ec.csuite_changes) ? ec.csuite_changes.length : 0
               const growthCount = Array.isArray(ec.growth_indicators) ? ec.growth_indicators.length : 0
+              const sonarNewsCount = sonarMatch ? (Array.isArray(sonarMatch.recent_news) ? sonarMatch.recent_news.length : 0) : 0
 
               return (
                 <div key={ec.company_name} className={`bg-card rounded-lg border transition-all ${ec.selected ? 'border-primary/40 shadow-md' : 'border-border/30'}`}>
@@ -1015,114 +1184,42 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
                     <button onClick={(e) => { e.stopPropagation(); toggleSelect(ec.company_name) }} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${ec.selected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
                       {ec.selected && <FiCheck className="w-3 h-3" />}
                     </button>
-
                     <button onClick={(e) => { e.stopPropagation(); togglePriority(ec.company_name) }} className={`flex-shrink-0 ${ec.priority ? 'text-amber-500' : 'text-muted-foreground/40'} hover:text-amber-500 transition-colors`}>
                       <FiStar className={`w-4 h-4 ${ec.priority ? 'fill-current' : ''}`} />
                     </button>
-
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-serif font-semibold text-foreground">{ec.company_name}</h3>
                         {ec.revenue?.figure && <InlineBadge variant="accent"><FiDollarSign className="w-3 h-3 mr-0.5" />{ec.revenue.figure}</InlineBadge>}
+                        {sonarMatch?.revenue?.figure && sonarMatch.revenue.figure !== ec.revenue?.figure && (
+                          <InlineBadge variant="default"><FiDollarSign className="w-3 h-3 mr-0.5" />{sonarMatch.revenue.figure} (Sonar)</InlineBadge>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {newsCount > 0 && <InlineBadge variant="muted">{newsCount} news</InlineBadge>}
-                        {csuiteCount > 0 && <InlineBadge variant="warning">{csuiteCount} C-suite changes</InlineBadge>}
-                        {growthCount > 0 && <InlineBadge variant="success"><FiTrendingUp className="w-3 h-3 mr-0.5" />{growthCount} growth signals</InlineBadge>}
+                        {newsCount > 0 && <InlineBadge variant="muted">{newsCount} news (G)</InlineBadge>}
+                        {sonarNewsCount > 0 && <InlineBadge variant="muted">{sonarNewsCount} news (S)</InlineBadge>}
+                        {csuiteCount > 0 && <InlineBadge variant="warning">{csuiteCount} C-suite</InlineBadge>}
+                        {growthCount > 0 && <InlineBadge variant="success"><FiTrendingUp className="w-3 h-3 mr-0.5" />{growthCount} growth</InlineBadge>}
                       </div>
                     </div>
-
                     <div className="flex-shrink-0">
                       {isExpanded ? <FiChevronUp className="w-5 h-5 text-muted-foreground" /> : <FiChevronDown className="w-5 h-5 text-muted-foreground" />}
                     </div>
                   </div>
 
                   {isExpanded && (
-                    <div className="px-4 pb-4 space-y-4 border-t border-border/20 pt-4">
-                      {/* Revenue */}
-                      {ec.revenue && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiDollarSign className="w-3.5 h-3.5" /> Revenue</h4>
-                          <div className="bg-muted/30 rounded-lg p-3 text-sm">
-                            <p className="font-semibold text-foreground text-lg">{ec.revenue?.figure ?? 'N/A'}</p>
-                            <p className="text-muted-foreground">Year: {ec.revenue?.year ?? 'N/A'} | Source: {ec.revenue?.source ?? 'N/A'}</p>
+                    <div className="border-t border-border/20 pt-4 px-4 pb-4">
+                      {hasComparison && sonarMatch ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className="border border-amber-200/50 rounded-lg p-3 bg-amber-50/20">
+                            <EnrichmentDetailPanel ec={ec} label="Gemini 2.5 Pro" />
+                          </div>
+                          <div className="border border-blue-200/50 rounded-lg p-3 bg-blue-50/20">
+                            <EnrichmentDetailPanel ec={sonarMatch} label="Sonar Pro" />
                           </div>
                         </div>
-                      )}
-
-                      {/* Recent News */}
-                      {newsCount > 0 && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiFlag className="w-3.5 h-3.5" /> Recent News</h4>
-                          <div className="space-y-2">
-                            {ec.recent_news.map((n, i) => (
-                              <div key={i} className="bg-muted/30 rounded-lg p-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <h5 className="text-sm font-medium text-foreground">{n.headline}</h5>
-                                  <span className="text-xs text-muted-foreground flex-shrink-0">{n.date}</span>
-                                </div>
-                                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{n.summary}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* C-Suite Changes */}
-                      {csuiteCount > 0 && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiUsers className="w-3.5 h-3.5" /> C-Suite Changes</h4>
-                          <div className="space-y-2">
-                            {ec.csuite_changes.map((cs, i) => (
-                              <div key={i} className="bg-muted/30 rounded-lg p-3 text-sm">
-                                <p className="font-medium text-foreground">{cs.name}</p>
-                                <p className="text-muted-foreground">{cs.previous_role} <FiArrowRight className="w-3 h-3 inline mx-1" /> {cs.new_role}</p>
-                                <p className="text-xs text-muted-foreground mt-1">{cs.date}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Growth Indicators */}
-                      {growthCount > 0 && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiTrendingUp className="w-3.5 h-3.5" /> Growth Indicators</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {ec.growth_indicators.map((gi, i) => (
-                              <div key={i} className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm">
-                                <span className="font-medium text-green-800">{gi.type}:</span> <span className="text-green-700">{gi.detail}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Competitive Intel */}
-                      {ec.competitive_intel && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiBarChart2 className="w-3.5 h-3.5" /> Competitive Intelligence</h4>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div className="bg-muted/30 rounded-lg p-3">
-                              <p className="text-xs font-medium text-muted-foreground mb-1.5">Vendors</p>
-                              <div className="flex flex-wrap gap-1">
-                                {Array.isArray(ec.competitive_intel?.vendors) && ec.competitive_intel.vendors.length > 0 ? ec.competitive_intel.vendors.map((v, i) => <InlineBadge key={i} variant="default">{v}</InlineBadge>) : <span className="text-xs text-muted-foreground">None listed</span>}
-                              </div>
-                            </div>
-                            <div className="bg-muted/30 rounded-lg p-3">
-                              <p className="text-xs font-medium text-muted-foreground mb-1.5">Partners</p>
-                              <div className="flex flex-wrap gap-1">
-                                {Array.isArray(ec.competitive_intel?.partners) && ec.competitive_intel.partners.length > 0 ? ec.competitive_intel.partners.map((p, i) => <InlineBadge key={i} variant="success">{p}</InlineBadge>) : <span className="text-xs text-muted-foreground">None listed</span>}
-                              </div>
-                            </div>
-                            <div className="bg-muted/30 rounded-lg p-3">
-                              <p className="text-xs font-medium text-muted-foreground mb-1.5">Competitors</p>
-                              <div className="flex flex-wrap gap-1">
-                                {Array.isArray(ec.competitive_intel?.competitors) && ec.competitive_intel.competitors.length > 0 ? ec.competitive_intel.competitors.map((c, i) => <InlineBadge key={i} variant="warning">{c}</InlineBadge>) : <span className="text-xs text-muted-foreground">None listed</span>}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                      ) : (
+                        <EnrichmentDetailPanel ec={ec} label={geminiData.length > 0 ? 'Gemini 2.5 Pro' : 'Sonar Pro'} />
                       )}
                     </div>
                   )}
@@ -1407,39 +1504,86 @@ export default function Page() {
     setActiveAgentId(null)
   }, [updateCampaign])
 
+  const parseEnrichmentResult = (parsed: any): EnrichedCompany[] => {
+    return Array.isArray(parsed?.enriched_companies)
+      ? parsed.enriched_companies.map((ec: any) => ({
+          company_name: ec?.company_name ?? '',
+          revenue: { figure: ec?.revenue?.figure ?? 'N/A', year: ec?.revenue?.year ?? '', source: ec?.revenue?.source ?? '' },
+          recent_news: Array.isArray(ec?.recent_news) ? ec.recent_news.map((n: any) => ({ date: n?.date ?? '', headline: n?.headline ?? '', summary: n?.summary ?? '' })) : [],
+          csuite_changes: Array.isArray(ec?.csuite_changes) ? ec.csuite_changes.map((cs: any) => ({ name: cs?.name ?? '', new_role: cs?.new_role ?? '', previous_role: cs?.previous_role ?? '', date: cs?.date ?? '' })) : [],
+          growth_indicators: Array.isArray(ec?.growth_indicators) ? ec.growth_indicators.map((gi: any) => ({ type: gi?.type ?? '', detail: gi?.detail ?? '' })) : [],
+          competitive_intel: {
+            vendors: Array.isArray(ec?.competitive_intel?.vendors) ? ec.competitive_intel.vendors : [],
+            partners: Array.isArray(ec?.competitive_intel?.partners) ? ec.competitive_intel.partners : [],
+            competitors: Array.isArray(ec?.competitive_intel?.competitors) ? ec.competitive_intel.competitors : [],
+          },
+          selected: true,
+        }))
+      : []
+  }
+
   const runEnrichment = useCallback(async (campaign: Campaign) => {
     const selected = (campaign.companies ?? []).filter(c => c.selected)
     if (selected.length === 0) return
     setLoading(true)
     setError(null)
-    setActiveAgentId(ENRICHMENT_AGENT_ID)
+    setActiveAgentId(ENRICHMENT_GEMINI_ID)
     const companiesPayload = selected.map(c => ({ name: c.name, industry: c.industry, hq_location: c.hq_location, estimated_size: c.estimated_size, website: c.website }))
     const message = `Enrich the following companies with revenue, news, C-suite changes, growth indicators, and competitive intelligence: ${JSON.stringify(companiesPayload)}`
+
     try {
-      const result = await callAIAgent(message, ENRICHMENT_AGENT_ID)
-      const parsed = parseAgentResult(result)
-      if (!parsed) {
-        setError('Failed to parse enrichment results. Please try again.')
+      // Run both agents in parallel
+      const geminiStart = Date.now()
+      const sonarStart = Date.now()
+      const [geminiResult, sonarResult] = await Promise.allSettled([
+        callAIAgent(message, ENRICHMENT_GEMINI_ID),
+        callAIAgent(message, ENRICHMENT_SONAR_ID),
+      ])
+
+      let geminiEnriched: EnrichedCompany[] = []
+      let sonarEnriched: EnrichedCompany[] = []
+      let geminiSummary = ''
+      let sonarSummary = ''
+      let geminiTime: number | undefined
+      let sonarTime: number | undefined
+
+      // Parse Gemini results
+      if (geminiResult.status === 'fulfilled') {
+        geminiTime = Date.now() - geminiStart
+        const parsed = parseAgentResult(geminiResult.value)
+        if (parsed) {
+          geminiEnriched = parseEnrichmentResult(parsed)
+          geminiSummary = parsed?.enrichment_summary ?? ''
+        }
+      }
+
+      // Parse Sonar results
+      if (sonarResult.status === 'fulfilled') {
+        sonarTime = Date.now() - sonarStart
+        const parsed = parseAgentResult(sonarResult.value)
+        if (parsed) {
+          sonarEnriched = parseEnrichmentResult(parsed)
+          sonarSummary = parsed?.enrichment_summary ?? ''
+        }
+      }
+
+      if (geminiEnriched.length === 0 && sonarEnriched.length === 0) {
+        setError('Both enrichment models failed to return results. Please try again.')
         setLoading(false)
         setActiveAgentId(null)
         return
       }
-      const enriched: EnrichedCompany[] = Array.isArray(parsed?.enriched_companies)
-        ? parsed.enriched_companies.map((ec: any) => ({
-            company_name: ec?.company_name ?? '',
-            revenue: { figure: ec?.revenue?.figure ?? 'N/A', year: ec?.revenue?.year ?? '', source: ec?.revenue?.source ?? '' },
-            recent_news: Array.isArray(ec?.recent_news) ? ec.recent_news.map((n: any) => ({ date: n?.date ?? '', headline: n?.headline ?? '', summary: n?.summary ?? '' })) : [],
-            csuite_changes: Array.isArray(ec?.csuite_changes) ? ec.csuite_changes.map((cs: any) => ({ name: cs?.name ?? '', new_role: cs?.new_role ?? '', previous_role: cs?.previous_role ?? '', date: cs?.date ?? '' })) : [],
-            growth_indicators: Array.isArray(ec?.growth_indicators) ? ec.growth_indicators.map((gi: any) => ({ type: gi?.type ?? '', detail: gi?.detail ?? '' })) : [],
-            competitive_intel: {
-              vendors: Array.isArray(ec?.competitive_intel?.vendors) ? ec.competitive_intel.vendors : [],
-              partners: Array.isArray(ec?.competitive_intel?.partners) ? ec.competitive_intel.partners : [],
-              competitors: Array.isArray(ec?.competitive_intel?.competitors) ? ec.competitive_intel.competitors : [],
-            },
-            selected: true,
-          }))
-        : []
-      updateCampaign({ ...campaign, enrichedCompanies: enriched, stage: 'enrichment', enrichmentSummary: parsed?.enrichment_summary ?? '', updatedAt: new Date().toISOString() })
+
+      updateCampaign({
+        ...campaign,
+        enrichedCompanies: geminiEnriched,
+        enrichedCompaniesSonar: sonarEnriched,
+        stage: 'enrichment',
+        enrichmentSummary: geminiSummary,
+        enrichmentSummarySonar: sonarSummary,
+        enrichmentTimings: { gemini: geminiTime, sonar: sonarTime },
+        updatedAt: new Date().toISOString(),
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrichment failed. Please try again.')
     }
