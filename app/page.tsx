@@ -16,6 +16,8 @@ import { HiOutlineSparkles, HiOutlineBuildingOffice2 } from 'react-icons/hi2'
 
 // ─── AGENT IDS ───────────────────────────────────────────────────────────────
 const DISCOVERY_MANAGER_ID = '699fe64260c6ee660b2b0c26'
+const DISCOVERY_RESEARCHER_ID = '699fbc147aab67831bf8b7a7'
+const COMPANY_EXTRACTOR_ID = '699fe5da10134bfe58ea5f4f'
 const ENRICHMENT_GEMINI_ID = '699fb657119509164a42675b'
 const ENRICHMENT_SONAR_ID = '699fbeb5511be0527fc9339b'
 const CONTACT_AGENT_ID = '699fb67d511be0527fc9338e'
@@ -2092,6 +2094,147 @@ export default function Page() {
     setError(null)
   }, [])
 
+  // ─ Direct Pipeline Fallback ─
+  // When the Manager agent fails to consolidate results, this function
+  // directly orchestrates Researcher → Extractor from the frontend.
+  const runDirectPipeline = useCallback(async (campaign: Campaign): Promise<Company[]> => {
+    const targetCount = campaign.filters?.targetCount ?? 50
+    const geography = campaign.filters?.geography || ''
+    const industries = campaign.filters?.industries?.join(', ') || ''
+    const sizeRange = campaign.filters?.sizeRange || ''
+
+    console.log('[runDirectPipeline] Starting direct Researcher → Extractor pipeline')
+    setActiveAgentId(DISCOVERY_RESEARCHER_ID)
+
+    // Step 1: Call Discovery Researcher with the campaign directive
+    const researchMessage = `Search directive: ${campaign.directive}.
+${geography ? `Geography focus: ${geography}.` : ''}
+${industries ? `Target industries: ${industries}.` : ''}
+${sizeRange ? `Company size range: ${sizeRange}.` : ''}
+
+Search broadly across news articles, industry reports, press releases, market analyses, funding announcements, and company directories. Find as many relevant companies as possible (target: ${targetCount}+). For each source, list EVERY company name mentioned — even companies mentioned in passing or as competitors, partners, or vendors.`
+
+    const researchResult = await callAIAgent(researchMessage, DISCOVERY_RESEARCHER_ID)
+    console.log('[runDirectPipeline] Researcher result success:', researchResult?.success)
+
+    if (!researchResult?.success) {
+      console.error('[runDirectPipeline] Researcher failed:', researchResult?.error)
+      throw new Error('Discovery Researcher failed: ' + (researchResult?.error || 'Unknown error'))
+    }
+
+    const researchParsed = parseAgentResult(researchResult)
+    console.log('[runDirectPipeline] Researcher parsed keys:', researchParsed ? Object.keys(researchParsed) : 'null')
+
+    if (!researchParsed) {
+      throw new Error('Failed to parse Researcher results')
+    }
+
+    // Build the findings text to pass to the Extractor
+    let findingsText = ''
+    if (Array.isArray(researchParsed?.findings)) {
+      findingsText = researchParsed.findings.map((f: any, i: number) => {
+        const title = f?.source_title || `Source ${i + 1}`
+        const type = f?.source_type || ''
+        const content = f?.content || ''
+        const companies = Array.isArray(f?.companies_mentioned) ? f.companies_mentioned.join(', ') : ''
+        const date = f?.date_published || ''
+        return `--- SOURCE ${i + 1}: ${title} (${type}, ${date}) ---\n${content}\nCompanies mentioned: ${companies}`
+      }).join('\n\n')
+    } else if (researchParsed?.segment_summary) {
+      findingsText = researchParsed.segment_summary
+    } else if (typeof researchResult.raw_response === 'string') {
+      findingsText = researchResult.raw_response
+    }
+
+    if (!findingsText.trim()) {
+      console.warn('[runDirectPipeline] No findings text to extract from')
+      return []
+    }
+
+    console.log('[runDirectPipeline] Findings text length:', findingsText.length)
+
+    // Step 2: Call Company Name Extractor with the findings
+    setActiveAgentId(COMPANY_EXTRACTOR_ID)
+
+    // Truncate if too long for a single message (keep under 50K chars)
+    const maxLen = 50000
+    const truncatedFindings = findingsText.length > maxLen
+      ? findingsText.slice(0, maxLen) + '\n\n[...truncated for length]'
+      : findingsText
+
+    const extractMessage = `Extract every company name from the following web research findings. This is for the directive: "${campaign.directive}".
+${geography ? `Geography focus: ${geography}.` : ''}
+${industries ? `Target industries: ${industries}.` : ''}
+
+IMPORTANT: Extract EVERY company mentioned — even competitors, partners, vendors, or companies mentioned in passing. For each company, provide industry, HQ location, estimated size, and relevance score (1-10) based on the directive.
+
+RESEARCH FINDINGS:
+${truncatedFindings}`
+
+    const extractResult = await callAIAgent(extractMessage, COMPANY_EXTRACTOR_ID)
+    console.log('[runDirectPipeline] Extractor result success:', extractResult?.success)
+
+    if (!extractResult?.success) {
+      console.error('[runDirectPipeline] Extractor failed:', extractResult?.error)
+      // Even if Extractor fails, try to salvage company names from Researcher findings
+      if (Array.isArray(researchParsed?.findings)) {
+        const mentioned = new Set<string>()
+        const salvaged: Company[] = []
+        for (const finding of researchParsed.findings) {
+          if (Array.isArray(finding?.companies_mentioned)) {
+            for (const name of finding.companies_mentioned) {
+              if (typeof name === 'string' && name.trim() && !mentioned.has(name.trim().toLowerCase())) {
+                mentioned.add(name.trim().toLowerCase())
+                salvaged.push({
+                  name: name.trim(), industry: '', hq_location: '', estimated_size: '',
+                  relevance_score: 5, relevance_reasoning: `Mentioned in: ${finding?.source_title || 'web search'}`,
+                  website: '', source_segment: researchParsed?.segment_name ?? 'Direct Pipeline',
+                  selected: true,
+                })
+              }
+            }
+          }
+        }
+        console.log('[runDirectPipeline] Salvaged', salvaged.length, 'companies from Researcher findings')
+        return salvaged
+      }
+      throw new Error('Company Name Extractor failed: ' + (extractResult?.error || 'Unknown error'))
+    }
+
+    const extractParsed = parseAgentResult(extractResult)
+    console.log('[runDirectPipeline] Extractor parsed keys:', extractParsed ? Object.keys(extractParsed) : 'null')
+
+    if (!extractParsed) {
+      throw new Error('Failed to parse Extractor results')
+    }
+
+    // Parse extracted_companies from Extractor response
+    let rawCompanies: any[] = []
+    if (Array.isArray(extractParsed?.extracted_companies)) {
+      rawCompanies = extractParsed.extracted_companies
+    } else if (Array.isArray(extractParsed?.companies)) {
+      rawCompanies = extractParsed.companies
+    }
+
+    const companies: Company[] = rawCompanies.map((c: any) => ({
+      name: c?.name ?? c?.company_name ?? '',
+      industry: c?.industry ?? '',
+      hq_location: c?.hq_location ?? '',
+      estimated_size: c?.estimated_size ?? '',
+      relevance_score: typeof c?.relevance_score === 'number' ? c.relevance_score : 0,
+      relevance_reasoning: c?.relevance_reasoning ?? c?.mention_context ?? '',
+      website: c?.website ?? '',
+      source_segment: c?.search_segment ?? extractParsed?.search_segment ?? 'Direct Pipeline',
+      selected: true,
+    })).filter((c: Company) => c.name.trim().length > 0)
+
+    // Deduplicate
+    const { deduplicated } = deduplicateCompanies(companies)
+    console.log(`[runDirectPipeline] Complete: ${deduplicated.length} unique companies extracted (${rawCompanies.length} raw, ${companies.length} valid)`)
+
+    return deduplicated
+  }, [updateCampaign])
+
   // ─ Agent Calls ─
   const runDiscovery = useCallback(async (campaign: Campaign) => {
     setLoading(true)
@@ -2124,18 +2267,95 @@ export default function Page() {
         return
       }
 
-      const companies: Company[] = Array.isArray(parsed?.companies)
-        ? parsed.companies.map((c: any) => ({
-            name: c?.name ?? '', industry: c?.industry ?? '', hq_location: c?.hq_location ?? '',
-            estimated_size: c?.estimated_size ?? '', relevance_score: typeof c?.relevance_score === 'number' ? c.relevance_score : 0,
-            relevance_reasoning: c?.relevance_reasoning ?? '', website: c?.website ?? '',
-            source_segment: c?.source_segment ?? '', selected: true,
-          }))
-        : []
+      // Try multiple response shapes - Manager may return companies, extracted_companies, or findings
+      let rawCompanies: any[] = []
+
+      // Shape 1: Standard Manager response with "companies" array
+      if (Array.isArray(parsed?.companies) && parsed.companies.length > 0) {
+        rawCompanies = parsed.companies
+        console.log('[runDiscovery] Found companies in standard format:', rawCompanies.length)
+      }
+      // Shape 2: Extractor format leaked through - "extracted_companies"
+      else if (Array.isArray(parsed?.extracted_companies) && parsed.extracted_companies.length > 0) {
+        rawCompanies = parsed.extracted_companies.map((ec: any) => ({
+          name: ec?.name ?? '', industry: ec?.industry ?? '', hq_location: ec?.hq_location ?? '',
+          estimated_size: ec?.estimated_size ?? '', relevance_score: typeof ec?.relevance_score === 'number' ? ec.relevance_score : 0,
+          relevance_reasoning: ec?.mention_context ?? ec?.relevance_reasoning ?? '', website: ec?.website ?? '',
+          source_segment: ec?.search_segment ?? parsed?.search_segment ?? '',
+        }))
+        console.log('[runDiscovery] Found companies via extracted_companies format:', rawCompanies.length)
+      }
+      // Shape 3: Researcher findings with companies_mentioned arrays
+      else if (Array.isArray(parsed?.findings) && parsed.findings.length > 0) {
+        const mentioned = new Set<string>()
+        for (const finding of parsed.findings) {
+          if (Array.isArray(finding?.companies_mentioned)) {
+            for (const name of finding.companies_mentioned) {
+              if (typeof name === 'string' && name.trim() && !mentioned.has(name.trim().toLowerCase())) {
+                mentioned.add(name.trim().toLowerCase())
+                rawCompanies.push({
+                  name: name.trim(), industry: '', hq_location: '', estimated_size: '',
+                  relevance_score: 50, relevance_reasoning: `Mentioned in: ${finding?.source_title || 'web search'}`,
+                  website: '', source_segment: parsed?.segment_name ?? '',
+                })
+              }
+            }
+          }
+        }
+        console.log('[runDiscovery] Extracted companies from findings.companies_mentioned:', rawCompanies.length)
+      }
+      // Shape 4: Deep search for any nested companies/extracted_companies array
+      else {
+        const searchNested = (obj: any, depth = 0): any[] => {
+          if (!obj || typeof obj !== 'object' || depth > 5) return []
+          if (Array.isArray(obj.companies) && obj.companies.length > 0) return obj.companies
+          if (Array.isArray(obj.extracted_companies) && obj.extracted_companies.length > 0) return obj.extracted_companies
+          for (const key of ['result', 'response', 'data', 'output']) {
+            if (obj[key] && typeof obj[key] === 'object') {
+              const found = searchNested(obj[key], depth + 1)
+              if (found.length > 0) return found
+            }
+          }
+          return []
+        }
+        rawCompanies = searchNested(result)
+        if (rawCompanies.length > 0) {
+          console.log('[runDiscovery] Found companies via deep nested search:', rawCompanies.length)
+        }
+      }
+
+      const companies: Company[] = rawCompanies.map((c: any) => ({
+        name: c?.name ?? c?.company_name ?? '',
+        industry: c?.industry ?? '',
+        hq_location: c?.hq_location ?? '',
+        estimated_size: c?.estimated_size ?? '',
+        relevance_score: typeof c?.relevance_score === 'number' ? c.relevance_score : 0,
+        relevance_reasoning: c?.relevance_reasoning ?? c?.mention_context ?? '',
+        website: c?.website ?? '',
+        source_segment: c?.source_segment ?? c?.search_segment ?? '',
+        selected: true,
+      })).filter((c: Company) => c.name.trim().length > 0)
 
       if (companies.length === 0) {
-        console.warn('[runDiscovery] No companies extracted. parsed.companies:', parsed?.companies)
-        setError(`Discovery completed but no companies were found. The agent may need a more specific directive. Parsed keys: ${Object.keys(parsed).join(', ')}`)
+        console.warn('[runDiscovery] Manager returned 0 companies. Falling back to direct pipeline. Parsed keys:', Object.keys(parsed))
+        // FALLBACK: Directly orchestrate Researcher + Extractor from frontend
+        try {
+          const fallbackCompanies = await runDirectPipeline(campaign)
+          if (fallbackCompanies.length > 0) {
+            const segStrategy: SegmentStrategy[] = [{ segment_name: 'Direct Pipeline Fallback', target_count: targetCount, actual_count: fallbackCompanies.length }]
+            updateCampaign({
+              ...campaign, companies: fallbackCompanies, stage: 'discovery',
+              searchSummary: `Found ${fallbackCompanies.length} companies via direct Research + Extract pipeline (fallback mode).`,
+              segmentationStrategy: segStrategy, duplicatesRemoved: 0, updatedAt: new Date().toISOString(),
+            })
+            setLoading(false)
+            setActiveAgentId(null)
+            return
+          }
+        } catch (fallbackErr) {
+          console.error('[runDiscovery] Fallback pipeline also failed:', fallbackErr)
+        }
+        setError(`Discovery completed but no companies were found. Try a more specific directive or retry.`)
         setLoading(false)
         setActiveAgentId(null)
         return
@@ -2160,7 +2380,7 @@ export default function Page() {
     }
     setLoading(false)
     setActiveAgentId(null)
-  }, [updateCampaign])
+  }, [updateCampaign, runDirectPipeline])
 
   const parseEnrichmentResult = (parsed: any): EnrichedCompany[] => {
     return Array.isArray(parsed?.enriched_companies)
