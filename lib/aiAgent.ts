@@ -75,7 +75,7 @@ export interface UploadResponse {
   error?: string
 }
 
-const POLL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+const POLL_TIMEOUT_MS = 8 * 60 * 1000 // 8 minutes — manager-subagent patterns need more time
 
 /**
  * Call the AI Agent via server-side API route.
@@ -126,20 +126,43 @@ export async function callAIAgent(
     // 2. Poll POST /api/agent with { task_id } — adaptive backoff from CSR
     const startTime = Date.now()
     let attempt = 0
+    let consecutiveErrors = 0
+    const MAX_CONSECUTIVE_ERRORS = 5
 
     while (Date.now() - startTime < POLL_TIMEOUT_MS) {
-      const delay = Math.min(300 * Math.pow(1.5, attempt), 3000)
+      const delay = Math.min(300 * Math.pow(1.5, attempt), 5000)
       await new Promise(r => setTimeout(r, delay))
       attempt++
 
-      const pollRes = await fetchWrapper('/api/agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id }),
-      })
+      let pollRes: Response | undefined
+      try {
+        pollRes = await fetchWrapper('/api/agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_id }),
+        })
+      } catch {
+        // Network error on this poll — retry
+        consecutiveErrors++
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) break
+        continue
+      }
+
       if (!pollRes) {
+        consecutiveErrors++
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) break
         continue // fetchWrapper returned undefined (redirect/error) — retry next poll
       }
+
+      // On server errors (502/503/504), retry instead of giving up
+      if (pollRes.status >= 502 && pollRes.status <= 504) {
+        consecutiveErrors++
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) break
+        continue
+      }
+
+      consecutiveErrors = 0 // Reset on successful response
+
       const pollData = await pollRes.json()
 
       if (pollData.status === 'processing') {
@@ -155,15 +178,19 @@ export async function callAIAgent(
       }
     }
 
-    // Timed out
+    // Timed out or too many consecutive errors
     return {
       success: false,
       response: {
         status: 'error',
         result: {},
-        message: 'Agent task timed out after 5 minutes',
+        message: consecutiveErrors >= MAX_CONSECUTIVE_ERRORS
+          ? 'Lost connection to the server after multiple retries. Please check your connection and try again.'
+          : 'Agent task timed out after 8 minutes. The agent may still be processing — please try again.',
       },
-      error: 'Agent task timed out after 5 minutes',
+      error: consecutiveErrors >= MAX_CONSECUTIVE_ERRORS
+        ? 'Connection lost — multiple poll failures'
+        : 'Agent task timed out',
     }
   } catch (error) {
     return {

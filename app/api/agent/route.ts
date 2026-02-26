@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import parseLLMJson from '@/lib/jsonParser'
 
+// Allow up to 5 minutes for long-running agent tasks (manager-subagent patterns)
+export const maxDuration = 300
+
 const LYZR_TASK_URL = 'https://agent-prod.studio.lyzr.ai/v3/inference/chat/task'
 const LYZR_API_KEY = process.env.LYZR_API_KEY || ''
+
+// Timeout for individual fetch calls to Lyzr API (2 minutes for submit, 30s for poll)
+const SUBMIT_TIMEOUT_MS = 120_000
+const POLL_TIMEOUT_MS = 30_000
 
 // Types
 interface ArtifactFile {
@@ -115,6 +122,13 @@ function normalizeResponse(parsed: any): NormalizedAgentResponse {
 }
 
 /**
+ * GET /api/agent — health check
+ */
+export async function GET() {
+  return NextResponse.json({ status: 'ok', configured: !!LYZR_API_KEY })
+}
+
+/**
  * POST /api/agent
  *
  * Two modes, both POST:
@@ -144,14 +158,25 @@ export async function POST(request: NextRequest) {
     // ── Submit mode: body has message + agent_id ──
     return submitTask(body)
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Server error'
+    let errorMsg = error instanceof Error ? error.message : 'Server error'
+    let statusCode = 500
+
+    // Handle abort/timeout errors specifically
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      errorMsg = 'Request to agent API timed out. The agent may still be processing — please retry.'
+      statusCode = 504
+    } else if (error instanceof DOMException && error.name === 'AbortError') {
+      errorMsg = 'Request was aborted. The agent may still be processing — please retry.'
+      statusCode = 504
+    }
+
     return NextResponse.json(
       {
         success: false,
         response: { status: 'error', result: {}, message: errorMsg },
         error: errorMsg,
       },
-      { status: 500 }
+      { status: statusCode }
     )
   }
 }
@@ -194,6 +219,7 @@ async function submitTask(body: any) {
       'x-api-key': LYZR_API_KEY,
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
   })
 
   if (!submitRes.ok) {
@@ -238,6 +264,7 @@ async function pollTask(task_id: string) {
       'accept': 'application/json',
       'x-api-key': LYZR_API_KEY,
     },
+    signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
   })
 
   if (!pollRes.ok) {
