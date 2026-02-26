@@ -1,0 +1,68 @@
+{
+  "agent_name": "Contact Finder Agent",
+  "agent_id": "699fb67d511be0527fc9338e",
+  "description": "Takes enriched company profiles and finds the right decision-maker contacts at each company using Apollo. Retrieves verified email addresses, phone numbers, job titles, seniority levels, and LinkedIn profiles. Prioritizes contacts matching typical buyer personas.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "company_contacts": [
+      {
+        "company_name": "string",
+        "contacts": [
+          {
+            "full_name": "string",
+            "title": "string",
+            "seniority": "string",
+            "email": "string",
+            "email_status": "string",
+            "phone": "string",
+            "linkedin_url": "string"
+          }
+        ],
+        "organization_data": {
+          "apollo_id": "string",
+          "domain": "string",
+          "employee_count": "string",
+          "industry": "string"
+        }
+      }
+    ],
+    "total_contacts_found": "number",
+    "search_summary": "string"
+  },
+  "example_response": {
+    "company_contacts": [
+      {
+        "company_name": "sample string",
+        "contacts": [
+          {
+            "full_name": "sample string",
+            "title": "sample string",
+            "seniority": "sample string",
+            "email": "sample string",
+            "email_status": "sample string",
+            "phone": "sample string",
+            "linkedin_url": "sample string"
+          }
+        ],
+        "organization_data": {
+          "apollo_id": "sample string",
+          "domain": "sample string",
+          "employee_count": "sample string",
+          "industry": "sample string"
+        }
+      }
+    ],
+    "total_contacts_found": 0,
+    "search_summary": "sample string"
+  },
+  "has_module_outputs": true,
+  "module_outputs_example": {
+    "artifact_files": [
+      {
+        "file_url": "https://example.com/file.pdf"
+      }
+    ]
+  }
+}

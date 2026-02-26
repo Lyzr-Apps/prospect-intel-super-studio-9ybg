@@ -1,0 +1,98 @@
+{
+  "agent_name": "Company Enrichment Agent",
+  "agent_id": "699fb657119509164a42675b",
+  "description": "Takes an approved list of companies and performs deep external research on each: most recent revenue figures, significant recent news/developments, C-suite and leadership changes, growth indicators (hiring, funding, expansion), and competitive intelligence (current vendors/partners). Returns structured enrichment profiles.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "enriched_companies": [
+      {
+        "company_name": "string",
+        "revenue": {
+          "figure": "string",
+          "year": "string",
+          "source": "string"
+        },
+        "recent_news": [
+          {
+            "date": "string",
+            "headline": "string",
+            "summary": "string"
+          }
+        ],
+        "csuite_changes": [
+          {
+            "name": "string",
+            "new_role": "string",
+            "previous_role": "string",
+            "date": "string"
+          }
+        ],
+        "growth_indicators": [
+          {
+            "type": "string",
+            "detail": "string"
+          }
+        ],
+        "competitive_intel": {
+          "vendors": [
+            "string"
+          ],
+          "partners": [
+            "string"
+          ],
+          "competitors": [
+            "string"
+          ]
+        }
+      }
+    ],
+    "enrichment_summary": "string"
+  },
+  "example_response": {
+    "enriched_companies": [
+      {
+        "company_name": "sample string",
+        "revenue": {
+          "figure": "sample string",
+          "year": "sample string",
+          "source": "sample string"
+        },
+        "recent_news": [
+          {
+            "date": "sample string",
+            "headline": "sample string",
+            "summary": "sample string"
+          }
+        ],
+        "csuite_changes": [
+          {
+            "name": "sample string",
+            "new_role": "sample string",
+            "previous_role": "sample string",
+            "date": "sample string"
+          }
+        ],
+        "growth_indicators": [
+          {
+            "type": "sample string",
+            "detail": "sample string"
+          }
+        ],
+        "competitive_intel": {
+          "vendors": [
+            "sample string"
+          ],
+          "partners": [
+            "sample string"
+          ],
+          "competitors": [
+            "sample string"
+          ]
+        }
+      }
+    ],
+    "enrichment_summary": "sample string"
+  }
+}

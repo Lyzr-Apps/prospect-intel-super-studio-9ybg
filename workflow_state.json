@@ -1,0 +1,52 @@
+{
+  "workflow": "ProspectIQ - Intelligent Prospecting & Enrichment Platform",
+  "agents": [
+    {
+      "agent_id": "699fb657d50b8c75c7cbeb2f",
+      "agent_name": "Company Discovery Agent",
+      "node_id": "company_discovery",
+      "provider": "perplexity",
+      "model": "sonar-pro",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false
+    },
+    {
+      "agent_id": "699fb657119509164a42675b",
+      "agent_name": "Company Enrichment Agent",
+      "node_id": "company_enrichment",
+      "provider": "perplexity",
+      "model": "sonar-pro",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false
+    },
+    {
+      "agent_id": "699fb67d511be0527fc9338e",
+      "agent_name": "Contact Finder Agent",
+      "node_id": "contact_finder",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "agent_type": "json",
+      "has_tools": true,
+      "tool_configs": [
+        {
+          "tool_name": "apollo",
+          "tool_source": "composio",
+          "action_names": ["APOLLO_PEOPLE_SEARCH", "APOLLO_PEOPLE_ENRICHMENT", "APOLLO_ORGANIZATION_ENRICHMENT"]
+        }
+      ],
+      "has_file_output": true,
+      "has_image_output": false,
+      "has_voice": false
+    }
+  ],
+  "workflow_structure": {
+    "pattern": "sequential",
+    "flow": "input_node -> company_discovery -> company_enrichment -> contact_finder -> output_node"
+  }
+}

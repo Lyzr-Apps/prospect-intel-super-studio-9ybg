@@ -1,0 +1,62 @@
+{
+  "agent_id": "699fb67d511be0527fc9338e",
+  "agent_name": "Contact Finder Agent",
+  "agent_type": "json",
+  "accessor": "json",
+  "has_module_outputs": true,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "ContactFinderResponse",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_contacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "company_name": { "type": "string" },
+                "contacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "full_name": { "type": "string" },
+                      "title": { "type": "string" },
+                      "seniority": { "type": "string" },
+                      "email": { "type": "string" },
+                      "email_status": { "type": "string" },
+                      "phone": { "type": "string" },
+                      "linkedin_url": { "type": "string" }
+                    },
+                    "required": ["full_name", "title", "seniority", "email", "email_status", "phone", "linkedin_url"],
+                    "additionalProperties": false
+                  }
+                },
+                "organization_data": {
+                  "type": "object",
+                  "properties": {
+                    "apollo_id": { "type": "string" },
+                    "domain": { "type": "string" },
+                    "employee_count": { "type": "string" },
+                    "industry": { "type": "string" }
+                  },
+                  "required": ["apollo_id", "domain", "employee_count", "industry"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["company_name", "contacts", "organization_data"],
+              "additionalProperties": false
+            }
+          },
+          "total_contacts_found": { "type": "number" },
+          "search_summary": { "type": "string" }
+        },
+        "required": ["company_contacts", "total_contacts_found", "search_summary"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

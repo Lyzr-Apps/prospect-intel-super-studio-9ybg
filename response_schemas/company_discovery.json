@@ -1,0 +1,40 @@
+{
+  "agent_id": "699fb657d50b8c75c7cbeb2f",
+  "agent_name": "Company Discovery Agent",
+  "agent_type": "json",
+  "accessor": "json",
+  "has_module_outputs": false,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "CompanyDiscoveryResponse",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "companies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "industry": { "type": "string" },
+                "hq_location": { "type": "string" },
+                "estimated_size": { "type": "string" },
+                "relevance_score": { "type": "number" },
+                "relevance_reasoning": { "type": "string" },
+                "website": { "type": "string" }
+              },
+              "required": ["name", "industry", "hq_location", "estimated_size", "relevance_score", "relevance_reasoning", "website"],
+              "additionalProperties": false
+            }
+          },
+          "search_summary": { "type": "string" },
+          "total_found": { "type": "number" }
+        },
+        "required": ["companies", "search_summary", "total_found"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

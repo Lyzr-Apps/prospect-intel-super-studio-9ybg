@@ -1,26 +1,1579 @@
-/**
- * MAIN PAGE - Build your UI here!
- *
- * FILE STRUCTURE:
- * - app/page.tsx         <- YOU ARE HERE - main page
- * - app/layout.tsx       <- root layout
- * - app/api/             <- API routes (server-side)
- * - components/ui/       <- shadcn/ui components
- * - lib/utils.ts         <- cn() helper
- * - lib/aiAgent.ts       <- AI agent client utilities
- */
+'use client'
 
-export default function Page() {
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { callAIAgent, AIAgentResponse } from '@/lib/aiAgent'
+import parseLLMJson from '@/lib/jsonParser'
+import {
+  FiSearch, FiPlus, FiTrash2, FiStar, FiExternalLink, FiDownload,
+  FiChevronDown, FiChevronUp, FiCheck, FiX, FiFilter, FiRefreshCw,
+  FiCompass, FiUsers, FiTrendingUp, FiDollarSign, FiEdit3, FiMail,
+  FiPhone, FiGlobe, FiFlag, FiClock, FiAlertCircle, FiCheckCircle,
+  FiArrowRight, FiChevronRight, FiMenu, FiMoreVertical, FiMapPin,
+  FiBriefcase, FiAward, FiBarChart2, FiDatabase, FiTarget, FiLayers
+} from 'react-icons/fi'
+import { HiOutlineSparkles, HiOutlineBuildingOffice2 } from 'react-icons/hi2'
+
+// ─── AGENT IDS ───────────────────────────────────────────────────────────────
+const DISCOVERY_AGENT_ID = '699fb657d50b8c75c7cbeb2f'
+const ENRICHMENT_AGENT_ID = '699fb657119509164a42675b'
+const CONTACT_AGENT_ID = '699fb67d511be0527fc9338e'
+
+// ─── THEME ───────────────────────────────────────────────────────────────────
+const THEME_VARS: React.CSSProperties & Record<string, string> = {
+  '--background': '35 29% 95%',
+  '--foreground': '30 22% 14%',
+  '--card': '35 29% 92%',
+  '--card-foreground': '30 22% 14%',
+  '--popover': '35 29% 90%',
+  '--popover-foreground': '30 22% 14%',
+  '--primary': '27 61% 26%',
+  '--primary-foreground': '35 29% 98%',
+  '--secondary': '35 20% 88%',
+  '--secondary-foreground': '30 22% 18%',
+  '--accent': '43 75% 38%',
+  '--accent-foreground': '35 29% 98%',
+  '--destructive': '0 84% 60%',
+  '--muted': '35 15% 85%',
+  '--muted-foreground': '30 20% 45%',
+  '--border': '27 61% 26%',
+  '--input': '35 15% 75%',
+  '--ring': '27 61% 26%',
+  '--sidebar-bg': '35 25% 90%',
+  '--sidebar-foreground': '30 22% 14%',
+  '--sidebar-border': '35 20% 85%',
+  '--sidebar-primary': '27 61% 26%',
+  '--sidebar-accent': '35 20% 85%',
+  '--chart-1': '27 61% 26%',
+  '--chart-2': '43 75% 38%',
+  '--chart-3': '30 55% 25%',
+  '--chart-4': '35 45% 42%',
+  '--chart-5': '20 65% 35%',
+  '--radius': '0.5rem',
+}
+
+// ─── TYPES ───────────────────────────────────────────────────────────────────
+interface Company {
+  name: string
+  industry: string
+  hq_location: string
+  estimated_size: string
+  relevance_score: number
+  relevance_reasoning: string
+  website: string
+  selected?: boolean
+  note?: string
+}
+
+interface Revenue {
+  figure: string
+  year: string
+  source: string
+}
+
+interface NewsItem {
+  date: string
+  headline: string
+  summary: string
+}
+
+interface CSuiteChange {
+  name: string
+  new_role: string
+  previous_role: string
+  date: string
+}
+
+interface GrowthIndicator {
+  type: string
+  detail: string
+}
+
+interface CompetitiveIntel {
+  vendors: string[]
+  partners: string[]
+  competitors: string[]
+}
+
+interface EnrichedCompany {
+  company_name: string
+  revenue: Revenue
+  recent_news: NewsItem[]
+  csuite_changes: CSuiteChange[]
+  growth_indicators: GrowthIndicator[]
+  competitive_intel: CompetitiveIntel
+  selected?: boolean
+  note?: string
+  priority?: boolean
+}
+
+interface Contact {
+  full_name: string
+  title: string
+  seniority: string
+  email: string
+  email_status: string
+  phone: string
+  linkedin_url: string
+}
+
+interface OrgData {
+  apollo_id: string
+  domain: string
+  employee_count: string
+  industry: string
+}
+
+interface CompanyContacts {
+  company_name: string
+  contacts: Contact[]
+  organization_data: OrgData
+}
+
+interface ArtifactFile {
+  file_url: string
+  name: string
+  format_type: string
+}
+
+interface CampaignFilters {
+  geography?: string
+  sizeRange?: string
+  industries?: string[]
+}
+
+interface Campaign {
+  id: string
+  name: string
+  directive: string
+  filters: CampaignFilters
+  companies: Company[]
+  enrichedCompanies: EnrichedCompany[]
+  contacts: CompanyContacts[]
+  artifactFiles: ArtifactFile[]
+  stage: 'discovery' | 'enrichment' | 'contacts' | 'completed'
+  createdAt: string
+  updatedAt: string
+  priority_flags: string[]
+  searchSummary?: string
+  enrichmentSummary?: string
+  contactSummary?: string
+  totalContactsFound?: number
+}
+
+type AppView = 'dashboard' | 'campaign'
+type SidebarFilter = 'all' | 'in_progress' | 'completed'
+
+// ─── HELPER: parse agent result robustly ─────────────────────────────────────
+function parseAgentResult(result: AIAgentResponse): any {
+  if (!result?.success) return null
+
+  const data = result?.response?.result
+  if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+    if (data.companies || data.enriched_companies || data.company_contacts) {
+      return data
+    }
+    if (data.result && typeof data.result === 'object') {
+      const nested = data.result
+      if (nested.companies || nested.enriched_companies || nested.company_contacts) {
+        return nested
+      }
+    }
+  }
+
+  if (result?.raw_response) {
+    try {
+      const parsed = parseLLMJson(result.raw_response)
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.companies || parsed.enriched_companies || parsed.company_contacts) {
+          return parsed
+        }
+        if (parsed.result && typeof parsed.result === 'object') {
+          const nested = parsed.result
+          if (nested.companies || nested.enriched_companies || nested.company_contacts) {
+            return nested
+          }
+        }
+        if (parsed.response?.result) {
+          const nested = parsed.response.result
+          if (nested.companies || nested.enriched_companies || nested.company_contacts) {
+            return nested
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return data || null
+}
+
+// ─── MARKDOWN RENDERER ───────────────────────────────────────────────────────
+function formatInline(text: string) {
+  const parts = text.split(/\*\*(.*?)\*\*/g)
+  if (parts.length === 1) return text
+  return parts.map((part, i) =>
+    i % 2 === 1 ? (
+      <strong key={i} className="font-semibold">{part}</strong>
+    ) : (
+      <React.Fragment key={i}>{part}</React.Fragment>
+    )
+  )
+}
+
+function renderMarkdown(text: string) {
+  if (!text) return null
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-white mb-4">
-          Ready to Build Something Amazing!
-        </h1>
-        <p className="text-gray-300 text-lg">
-          Next.js + React + TypeScript + Tailwind CSS
-        </p>
+    <div className="space-y-2">
+      {text.split('\n').map((line, i) => {
+        if (line.startsWith('### ')) return <h4 key={i} className="font-semibold text-sm mt-3 mb-1">{line.slice(4)}</h4>
+        if (line.startsWith('## ')) return <h3 key={i} className="font-semibold text-base mt-3 mb-1">{line.slice(3)}</h3>
+        if (line.startsWith('# ')) return <h2 key={i} className="font-bold text-lg mt-4 mb-2">{line.slice(2)}</h2>
+        if (line.startsWith('- ') || line.startsWith('* ')) return <li key={i} className="ml-4 list-disc text-sm">{formatInline(line.slice(2))}</li>
+        if (/^\d+\.\s/.test(line)) return <li key={i} className="ml-4 list-decimal text-sm">{formatInline(line.replace(/^\d+\.\s/, ''))}</li>
+        if (!line.trim()) return <div key={i} className="h-1" />
+        return <p key={i} className="text-sm">{formatInline(line)}</p>
+      })}
+    </div>
+  )
+}
+
+// ─── SAMPLE DATA ─────────────────────────────────────────────────────────────
+function getSampleCampaign(): Campaign {
+  return {
+    id: 'sample-1',
+    name: 'Enterprise SaaS Expansion Q1',
+    directive: 'Find mid-market and enterprise B2B SaaS companies in North America focused on data analytics, cloud infrastructure, or cybersecurity with 200-5000 employees, prioritizing those showing recent growth signals.',
+    filters: { geography: 'North America', sizeRange: '200-5000', industries: ['SaaS', 'Data Analytics', 'Cybersecurity'] },
+    companies: [
+      { name: 'DataVault Technologies', industry: 'Data Analytics', hq_location: 'San Francisco, CA', estimated_size: '500-1000', relevance_score: 9, relevance_reasoning: 'Strong growth in cloud data analytics, recent Series C funding, expanding enterprise customer base.', website: 'https://datavault.example.com', selected: true },
+      { name: 'CyberShield Solutions', industry: 'Cybersecurity', hq_location: 'Austin, TX', estimated_size: '200-500', relevance_score: 8, relevance_reasoning: 'Leading endpoint security vendor with rapid SMB-to-enterprise transition.', website: 'https://cybershield.example.com', selected: true },
+      { name: 'CloudNexus Inc', industry: 'Cloud Infrastructure', hq_location: 'Seattle, WA', estimated_size: '1000-2000', relevance_score: 8, relevance_reasoning: 'Major cloud orchestration platform with strong partnership network.', website: 'https://cloudnexus.example.com', selected: false },
+      { name: 'InsightFlow Analytics', industry: 'Business Intelligence', hq_location: 'New York, NY', estimated_size: '300-600', relevance_score: 7, relevance_reasoning: 'Emerging BI platform with AI-driven insights for mid-market.', website: 'https://insightflow.example.com', selected: false },
+    ],
+    enrichedCompanies: [
+      {
+        company_name: 'DataVault Technologies', selected: true, priority: true,
+        revenue: { figure: '$120M ARR', year: '2024', source: 'Crunchbase / Press Release' },
+        recent_news: [
+          { date: '2024-11-15', headline: 'DataVault Raises $80M Series C', summary: 'Funding round led by Sequoia Capital to accelerate enterprise growth.' },
+          { date: '2024-10-02', headline: 'DataVault Launches Real-Time Analytics Suite', summary: 'New product line targeting Fortune 500 data teams.' },
+        ],
+        csuite_changes: [
+          { name: 'Sarah Chen', new_role: 'Chief Revenue Officer', previous_role: 'VP Sales at Snowflake', date: '2024-09-01' },
+        ],
+        growth_indicators: [
+          { type: 'Hiring', detail: '45 open positions in engineering and sales' },
+          { type: 'Expansion', detail: 'Opened new offices in London and Singapore' },
+        ],
+        competitive_intel: { vendors: ['AWS', 'Databricks'], partners: ['Deloitte', 'Accenture'], competitors: ['Looker', 'Tableau', 'ThoughtSpot'] },
+      },
+      {
+        company_name: 'CyberShield Solutions', selected: true,
+        revenue: { figure: '$45M ARR', year: '2024', source: 'Industry Estimate' },
+        recent_news: [
+          { date: '2024-12-01', headline: 'CyberShield Wins Federal Contract', summary: 'Multi-year contract with Department of Defense valued at $15M.' },
+        ],
+        csuite_changes: [],
+        growth_indicators: [
+          { type: 'Funding', detail: 'Series B of $30M closed in Q3 2024' },
+        ],
+        competitive_intel: { vendors: ['Microsoft Azure'], partners: ['PwC'], competitors: ['CrowdStrike', 'SentinelOne'] },
+      },
+    ],
+    contacts: [
+      {
+        company_name: 'DataVault Technologies',
+        contacts: [
+          { full_name: 'Sarah Chen', title: 'Chief Revenue Officer', seniority: 'C-Suite', email: 'sarah.chen@datavault.example.com', email_status: 'verified', phone: '+1-415-555-0101', linkedin_url: 'https://linkedin.com/in/sarahchen' },
+          { full_name: 'Marcus Johnson', title: 'VP of Engineering', seniority: 'VP', email: 'marcus.j@datavault.example.com', email_status: 'verified', phone: '+1-415-555-0102', linkedin_url: 'https://linkedin.com/in/marcusjohnson' },
+          { full_name: 'Lisa Park', title: 'Director of Partnerships', seniority: 'Director', email: 'lisa.park@datavault.example.com', email_status: 'unverified', phone: '', linkedin_url: 'https://linkedin.com/in/lisapark' },
+        ],
+        organization_data: { apollo_id: 'abc123', domain: 'datavault.example.com', employee_count: '750', industry: 'Data Analytics' },
+      },
+      {
+        company_name: 'CyberShield Solutions',
+        contacts: [
+          { full_name: 'James Wright', title: 'CEO', seniority: 'C-Suite', email: 'james@cybershield.example.com', email_status: 'verified', phone: '+1-512-555-0201', linkedin_url: 'https://linkedin.com/in/jameswright' },
+          { full_name: 'Priya Sharma', title: 'VP of Sales', seniority: 'VP', email: 'priya.s@cybershield.example.com', email_status: 'verified', phone: '+1-512-555-0202', linkedin_url: 'https://linkedin.com/in/priyasharma' },
+        ],
+        organization_data: { apollo_id: 'def456', domain: 'cybershield.example.com', employee_count: '320', industry: 'Cybersecurity' },
+      },
+    ],
+    artifactFiles: [],
+    stage: 'completed',
+    createdAt: '2024-12-01T10:00:00Z',
+    updatedAt: '2024-12-05T14:30:00Z',
+    priority_flags: ['DataVault Technologies'],
+    searchSummary: 'Found 4 highly relevant companies matching the criteria for enterprise SaaS in data analytics, cloud infrastructure, and cybersecurity sectors across North America.',
+    enrichmentSummary: 'Successfully enriched 2 companies with comprehensive revenue data, recent news, leadership changes, growth signals, and competitive landscape insights.',
+    contactSummary: 'Identified 5 decision-maker contacts across 2 target companies, with 4 verified email addresses.',
+    totalContactsFound: 5,
+  }
+}
+
+// ─── LOCALSTORAGE ────────────────────────────────────────────────────────────
+function loadCampaigns(): Campaign[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem('prospectiq_campaigns')
+    if (raw) return JSON.parse(raw)
+  } catch {}
+  return []
+}
+
+function saveCampaigns(campaigns: Campaign[]) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem('prospectiq_campaigns', JSON.stringify(campaigns))
+  } catch {}
+}
+
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 9)
+}
+
+// ─── ERROR BOUNDARY ──────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false, error: '' }
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error: error.message }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+          <div className="text-center p-8 max-w-md">
+            <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
+            <p className="text-muted-foreground mb-4 text-sm">{this.state.error}</p>
+            <button onClick={() => this.setState({ hasError: false, error: '' })} className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm">
+              Try again
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// ─── STEPPER ─────────────────────────────────────────────────────────────────
+function ProgressStepper({ stage }: { stage: Campaign['stage'] }) {
+  const steps = [
+    { key: 'discovery', label: 'Discovery', icon: FiSearch },
+    { key: 'enrichment', label: 'Enrichment', icon: FiDatabase },
+    { key: 'contacts', label: 'Contacts', icon: FiUsers },
+  ]
+  const stageOrder = ['discovery', 'enrichment', 'contacts', 'completed']
+  const currentIdx = stageOrder.indexOf(stage)
+
+  return (
+    <div className="flex items-center justify-center gap-0 mb-6">
+      {steps.map((step, i) => {
+        const isComplete = currentIdx > i || stage === 'completed'
+        const isActive = stageOrder[currentIdx] === step.key
+        const Icon = step.icon
+        return (
+          <React.Fragment key={step.key}>
+            {i > 0 && (
+              <div className={`h-0.5 w-16 md:w-24 ${isComplete ? 'bg-primary' : 'bg-muted'}`} />
+            )}
+            <div className="flex flex-col items-center gap-1">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all ${isComplete ? 'bg-primary text-primary-foreground' : isActive ? 'bg-primary text-primary-foreground ring-4 ring-primary/20' : 'bg-muted text-muted-foreground'}`}>
+                {isComplete ? <FiCheck className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+              </div>
+              <span className={`text-xs font-medium tracking-wide ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{step.label}</span>
+            </div>
+          </React.Fragment>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── SKELETON LOADERS ────────────────────────────────────────────────────────
+function SkeletonRow() {
+  return (
+    <div className="flex items-center gap-4 p-4 border-b border-border/30 animate-pulse">
+      <div className="w-4 h-4 rounded bg-muted" />
+      <div className="flex-1 space-y-2">
+        <div className="h-4 w-1/3 bg-muted rounded" />
+        <div className="h-3 w-1/2 bg-muted rounded" />
+      </div>
+      <div className="h-4 w-16 bg-muted rounded" />
+    </div>
+  )
+}
+
+function SkeletonCard() {
+  return (
+    <div className="rounded-lg bg-card border border-border/30 p-5 space-y-3 animate-pulse">
+      <div className="h-5 w-2/3 bg-muted rounded" />
+      <div className="h-3 w-1/2 bg-muted rounded" />
+      <div className="h-3 w-3/4 bg-muted rounded" />
+      <div className="flex gap-2 mt-2">
+        <div className="h-6 w-16 bg-muted rounded-full" />
+        <div className="h-6 w-20 bg-muted rounded-full" />
       </div>
     </div>
+  )
+}
+
+// ─── RELEVANCE BAR ───────────────────────────────────────────────────────────
+function RelevanceBar({ score }: { score: number }) {
+  const pct = Math.min(Math.max((score ?? 0) / 10, 0), 1) * 100
+  const color = pct >= 80 ? 'bg-green-600' : pct >= 60 ? 'bg-yellow-600' : 'bg-red-500'
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-20 h-2 rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-semibold text-muted-foreground">{score ?? 0}/10</span>
+    </div>
+  )
+}
+
+// ─── BADGE ───────────────────────────────────────────────────────────────────
+function InlineBadge({ children, variant = 'default' }: { children: React.ReactNode; variant?: 'default' | 'success' | 'warning' | 'danger' | 'accent' | 'muted' }) {
+  const styles: Record<string, string> = {
+    default: 'bg-primary/10 text-primary',
+    success: 'bg-green-100 text-green-800',
+    warning: 'bg-yellow-100 text-yellow-800',
+    danger: 'bg-red-100 text-red-800',
+    accent: 'bg-amber-100 text-amber-800',
+    muted: 'bg-muted text-muted-foreground',
+  }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${styles[variant] ?? styles.default}`}>
+      {children}
+    </span>
+  )
+}
+
+// ─── AGENT STATUS ────────────────────────────────────────────────────────────
+function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
+  const agents = [
+    { id: DISCOVERY_AGENT_ID, name: 'Company Discovery', desc: 'Perplexity sonar-pro: researches target companies', icon: FiSearch },
+    { id: ENRICHMENT_AGENT_ID, name: 'Company Enrichment', desc: 'Perplexity sonar-pro: enriches with business intel', icon: FiDatabase },
+    { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'GPT-4.1 + Apollo: finds verified contacts', icon: FiUsers },
+  ]
+  return (
+    <div className="rounded-lg p-4 mt-auto border-t" style={{ borderColor: 'hsl(35 20% 85%)' }}>
+      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiLayers className="w-3.5 h-3.5" /> Agents</h3>
+      <div className="space-y-1.5">
+        {agents.map(a => {
+          const isActive = activeAgentId === a.id
+          const Icon = a.icon
+          return (
+            <div key={a.id} className={`flex items-start gap-2 p-1.5 rounded-md text-xs transition-all ${isActive ? 'bg-primary/10' : ''}`}>
+              <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${isActive ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/30'}`} />
+              <div className="min-w-0">
+                <div className="font-medium text-foreground flex items-center gap-1"><Icon className="w-3 h-3 flex-shrink-0" /> {a.name}</div>
+                <p className="text-muted-foreground leading-relaxed truncate">{a.desc}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── SIDEBAR ─────────────────────────────────────────────────────────────────
+function AppSidebar({
+  campaigns, activeCampaignId, sidebarFilter, onFilterChange, onSelectCampaign, onNewCampaign, onViewDashboard, activeAgentId, collapsed, onToggle
+}: {
+  campaigns: Campaign[]
+  activeCampaignId: string | null
+  sidebarFilter: SidebarFilter
+  onFilterChange: (f: SidebarFilter) => void
+  onSelectCampaign: (id: string) => void
+  onNewCampaign: () => void
+  onViewDashboard: () => void
+  activeAgentId: string | null
+  collapsed: boolean
+  onToggle: () => void
+}) {
+  const filtered = useMemo(() => {
+    if (sidebarFilter === 'completed') return campaigns.filter(c => c.stage === 'completed')
+    if (sidebarFilter === 'in_progress') return campaigns.filter(c => c.stage !== 'completed')
+    return campaigns
+  }, [campaigns, sidebarFilter])
+
+  return (
+    <aside className={`flex-shrink-0 h-screen sticky top-0 flex flex-col transition-all duration-300 border-r ${collapsed ? 'w-16' : 'w-64'}`} style={{ backgroundColor: 'hsl(35 25% 90%)', borderColor: 'hsl(35 20% 85%)' }}>
+      <div className="p-4 flex items-center justify-between border-b" style={{ borderColor: 'hsl(35 20% 85%)' }}>
+        {!collapsed && (
+          <button onClick={onViewDashboard} className="flex items-center gap-2 group">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center"><FiTarget className="w-4 h-4 text-primary-foreground" /></div>
+            <span className="font-serif font-bold text-foreground tracking-wide text-lg group-hover:text-primary transition-colors">ProspectIQ</span>
+          </button>
+        )}
+        {collapsed && (
+          <button onClick={onViewDashboard} className="mx-auto">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center"><FiTarget className="w-4 h-4 text-primary-foreground" /></div>
+          </button>
+        )}
+        {!collapsed && (
+          <button onClick={onToggle} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"><FiMenu className="w-4 h-4" /></button>
+        )}
+      </div>
+
+      {collapsed && (
+        <div className="flex flex-col items-center gap-2 py-3">
+          <button onClick={onToggle} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"><FiMenu className="w-4 h-4" /></button>
+          <button onClick={onNewCampaign} className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90"><FiPlus className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {!collapsed && (
+        <>
+          <div className="p-3">
+            <button onClick={onNewCampaign} className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity">
+              <FiPlus className="w-4 h-4" /> New Campaign
+            </button>
+          </div>
+
+          <div className="px-3 pb-2 flex gap-1">
+            {(['all', 'in_progress', 'completed'] as SidebarFilter[]).map(f => (
+              <button key={f} onClick={() => onFilterChange(f)} className={`flex-1 px-2 py-1 rounded text-xs font-medium transition-colors ${sidebarFilter === f ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
+                {f === 'all' ? 'All' : f === 'in_progress' ? 'Active' : 'Done'}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-2 pb-2">
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-6">No campaigns</p>
+            )}
+            {filtered.map(c => (
+              <button key={c.id} onClick={() => onSelectCampaign(c.id)} className={`w-full text-left p-2.5 rounded-lg mb-1 transition-all text-sm ${activeCampaignId === c.id ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/60'}`}>
+                <div className="font-medium text-foreground truncate">{c.name}</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <InlineBadge variant={c.stage === 'completed' ? 'success' : 'accent'}>{c.stage === 'completed' ? 'Completed' : c.stage}</InlineBadge>
+                  <span className="text-xs text-muted-foreground">{(c.companies?.length ?? 0)} co.</span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <AgentStatusPanel activeAgentId={activeAgentId} />
+        </>
+      )}
+    </aside>
+  )
+}
+
+// ─── DASHBOARD VIEW ──────────────────────────────────────────────────────────
+function DashboardView({ campaigns, onSelectCampaign, onNewCampaign, searchTerm, onSearchChange }: {
+  campaigns: Campaign[]
+  onSelectCampaign: (id: string) => void
+  onNewCampaign: () => void
+  searchTerm: string
+  onSearchChange: (s: string) => void
+}) {
+  const filtered = useMemo(() => {
+    if (!searchTerm.trim()) return campaigns
+    const term = searchTerm.toLowerCase()
+    return campaigns.filter(c => c.name.toLowerCase().includes(term) || c.directive.toLowerCase().includes(term))
+  }, [campaigns, searchTerm])
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-serif font-bold text-foreground tracking-wide">Campaigns</h1>
+          <p className="text-muted-foreground mt-1 leading-relaxed">Manage your prospecting campaigns and target account lists.</p>
+        </div>
+        <button onClick={onNewCampaign} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity shadow-md self-start">
+          <FiPlus className="w-4 h-4" /> New Campaign
+        </button>
+      </div>
+
+      <div className="relative mb-6">
+        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input type="text" placeholder="Search campaigns..." value={searchTerm} onChange={e => onSearchChange(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-border/30 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="text-center py-20">
+          <div className="w-20 h-20 mx-auto rounded-full bg-muted flex items-center justify-center mb-6">
+            <FiCompass className="w-10 h-10 text-muted-foreground" />
+          </div>
+          <h2 className="text-xl font-serif font-semibold text-foreground mb-2">No campaigns yet</h2>
+          <p className="text-muted-foreground mb-6 max-w-md mx-auto leading-relaxed">Create your first prospecting campaign to discover target companies, enrich them with business intelligence, and find verified contacts.</p>
+          <button onClick={onNewCampaign} className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity shadow-md">
+            <FiPlus className="w-4 h-4" /> Create First Campaign
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.map(c => {
+          const stageLabels: Record<string, string> = { discovery: 'Discovery', enrichment: 'Enrichment', contacts: 'Contacts', completed: 'Completed' }
+          return (
+            <button key={c.id} onClick={() => onSelectCampaign(c.id)} className="text-left bg-card rounded-lg border border-border/30 p-5 hover:shadow-lg hover:border-primary/30 transition-all group">
+              <div className="flex items-start justify-between mb-3">
+                <h3 className="font-serif font-semibold text-foreground text-base group-hover:text-primary transition-colors leading-snug pr-2">{c.name}</h3>
+                <InlineBadge variant={c.stage === 'completed' ? 'success' : 'accent'}>{stageLabels[c.stage] ?? c.stage}</InlineBadge>
+              </div>
+              <p className="text-sm text-muted-foreground line-clamp-2 mb-4 leading-relaxed">{c.directive}</p>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1"><HiOutlineBuildingOffice2 className="w-3.5 h-3.5" /> {c.companies?.length ?? 0} companies</span>
+                <span className="flex items-center gap-1"><FiUsers className="w-3.5 h-3.5" /> {c.totalContactsFound ?? 0} contacts</span>
+              </div>
+              <div className="mt-3 pt-3 border-t border-border/20 text-xs text-muted-foreground flex items-center gap-1">
+                <FiClock className="w-3 h-3" /> Updated {new Date(c.updatedAt).toLocaleDateString()}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── NEW CAMPAIGN MODAL ──────────────────────────────────────────────────────
+function NewCampaignModal({ open, onClose, onCreate }: {
+  open: boolean
+  onClose: () => void
+  onCreate: (name: string, directive: string, filters: CampaignFilters) => void
+}) {
+  const [name, setName] = useState('')
+  const [directive, setDirective] = useState('')
+  const [geography, setGeography] = useState('')
+  const [sizeRange, setSizeRange] = useState('')
+  const [industries, setIndustries] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+
+  if (!open) return null
+
+  const handleCreate = () => {
+    if (!name.trim() || !directive.trim()) return
+    const parsedIndustries = industries.split(',').map(s => s.trim()).filter(Boolean)
+    onCreate(name.trim(), directive.trim(), {
+      geography: geography.trim() || undefined,
+      sizeRange: sizeRange.trim() || undefined,
+      industries: parsedIndustries.length > 0 ? parsedIndustries : undefined,
+    })
+    setName('')
+    setDirective('')
+    setGeography('')
+    setSizeRange('')
+    setIndustries('')
+    setShowFilters(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-card rounded-xl border border-border/30 shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="p-6 border-b border-border/20">
+          <h2 className="text-xl font-serif font-bold text-foreground tracking-wide">New Campaign</h2>
+          <p className="text-sm text-muted-foreground mt-1">Define your prospecting criteria to discover target companies.</p>
+        </div>
+        <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Campaign Name *</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Enterprise SaaS Q1 Targets" className="w-full px-3 py-2.5 rounded-lg bg-background border border-border/30 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Business Directive *</label>
+            <textarea value={directive} onChange={e => setDirective(e.target.value)} placeholder="Describe your ideal target companies, their characteristics, industry focus, size range, and any specific criteria..." rows={5} className="w-full px-3 py-2.5 rounded-lg bg-background border border-border/30 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none leading-relaxed" />
+          </div>
+
+          <button onClick={() => setShowFilters(!showFilters)} className="flex items-center gap-1 text-sm text-primary font-medium hover:underline">
+            <FiFilter className="w-3.5 h-3.5" /> {showFilters ? 'Hide' : 'Show'} Optional Filters
+            {showFilters ? <FiChevronUp className="w-3.5 h-3.5" /> : <FiChevronDown className="w-3.5 h-3.5" />}
+          </button>
+
+          {showFilters && (
+            <div className="space-y-3 pl-3 border-l-2 border-primary/20">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Geography</label>
+                <input type="text" value={geography} onChange={e => setGeography(e.target.value)} placeholder="e.g., North America, Europe" className="w-full px-3 py-2 rounded-lg bg-background border border-border/30 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Company Size Range</label>
+                <input type="text" value={sizeRange} onChange={e => setSizeRange(e.target.value)} placeholder="e.g., 200-5000 employees" className="w-full px-3 py-2 rounded-lg bg-background border border-border/30 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Industries (comma-separated)</label>
+                <input type="text" value={industries} onChange={e => setIndustries(e.target.value)} placeholder="e.g., SaaS, FinTech, HealthTech" className="w-full px-3 py-2 rounded-lg bg-background border border-border/30 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="p-4 border-t border-border/20 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">Cancel</button>
+          <button onClick={handleCreate} disabled={!name.trim() || !directive.trim()} className="px-5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
+            Create Campaign
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── DISCOVERY VIEW ──────────────────────────────────────────────────────────
+function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, onEnrich, activeAgentId }: {
+  campaign: Campaign
+  onUpdateCampaign: (c: Campaign) => void
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+  onEnrich: () => void
+  activeAgentId: string | null
+}) {
+  const companies = Array.isArray(campaign.companies) ? campaign.companies : []
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
+  const selectedCount = companies.filter(c => c.selected).length
+
+  const toggleSelect = (name: string) => {
+    const updated = companies.map(c => c.name === name ? { ...c, selected: !c.selected } : c)
+    onUpdateCampaign({ ...campaign, companies: updated, updatedAt: new Date().toISOString() })
+  }
+
+  const toggleAll = () => {
+    const allSelected = companies.length > 0 && companies.every(c => c.selected)
+    const updated = companies.map(c => ({ ...c, selected: !allSelected }))
+    onUpdateCampaign({ ...campaign, companies: updated, updatedAt: new Date().toISOString() })
+  }
+
+  const removeCompany = (name: string) => {
+    const updated = companies.filter(c => c.name !== name)
+    onUpdateCampaign({ ...campaign, companies: updated, updatedAt: new Date().toISOString() })
+  }
+
+  return (
+    <div>
+      <ProgressStepper stage="discovery" />
+
+      {campaign.searchSummary && (
+        <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+          <div className="flex items-start gap-2">
+            <HiOutlineSparkles className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.searchSummary)}</div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-red-700 text-sm"><FiAlertCircle className="w-4 h-4 flex-shrink-0" /> <span>{error}</span></div>
+          <button onClick={onRetry} className="flex items-center gap-1 text-red-700 text-sm font-medium hover:underline flex-shrink-0 ml-2"><FiRefreshCw className="w-3.5 h-3.5" /> Retry</button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="space-y-0 bg-card rounded-lg border border-border/30 overflow-hidden mb-5">
+          <div className="p-4 border-b border-border/20 flex items-center gap-2 text-sm text-primary font-medium">
+            <FiRefreshCw className="w-4 h-4 animate-spin" /> Researching target companies...
+          </div>
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
+        </div>
+      )}
+
+      {!loading && companies.length === 0 && !error && (
+        <div className="text-center py-16 bg-card rounded-lg border border-border/30">
+          <FiSearch className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-serif font-semibold text-foreground mb-2">Ready to discover companies</h3>
+          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">Click the button below to have the AI research and identify target companies based on your campaign directive.</p>
+          <button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
+            <FiSearch className="w-4 h-4" /> Generate Prospect List
+          </button>
+        </div>
+      )}
+
+      {companies.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-3">
+              <button onClick={toggleAll} className="flex items-center gap-1.5 text-sm text-primary font-medium hover:underline">
+                <FiCheck className="w-3.5 h-3.5" /> {companies.every(c => c.selected) ? 'Deselect All' : 'Select All'}
+              </button>
+              <span className="text-sm text-muted-foreground">{selectedCount} of {companies.length} selected</span>
+            </div>
+            <button onClick={onEnrich} disabled={selectedCount === 0 || loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
+              <FiArrowRight className="w-4 h-4" /> Enrich Selected ({selectedCount})
+            </button>
+          </div>
+
+          <div className="bg-card rounded-lg border border-border/30 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/30 text-left">
+                    <th className="p-3 w-10"></th>
+                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide">Company</th>
+                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden md:table-cell">Industry</th>
+                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden lg:table-cell">Location</th>
+                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden lg:table-cell">Size</th>
+                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide">Relevance</th>
+                    <th className="p-3 w-20"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {companies.map(co => (
+                    <React.Fragment key={co.name}>
+                      <tr className={`border-b border-border/20 hover:bg-muted/30 transition-colors cursor-pointer ${co.selected ? 'bg-primary/5' : ''}`}>
+                        <td className="p-3">
+                          <button onClick={(e) => { e.stopPropagation(); toggleSelect(co.name) }} className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${co.selected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                            {co.selected && <FiCheck className="w-3 h-3" />}
+                          </button>
+                        </td>
+                        <td className="p-3" onClick={() => setExpandedRow(expandedRow === co.name ? null : co.name)}>
+                          <div className="font-medium text-foreground">{co.name}</div>
+                          {co.website && (
+                            <a href={co.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-xs text-primary hover:underline flex items-center gap-0.5 mt-0.5">
+                              <FiGlobe className="w-3 h-3" /> {co.website.replace(/^https?:\/\//, '')}
+                            </a>
+                          )}
+                        </td>
+                        <td className="p-3 text-muted-foreground hidden md:table-cell">{co.industry}</td>
+                        <td className="p-3 text-muted-foreground hidden lg:table-cell"><span className="flex items-center gap-1"><FiMapPin className="w-3 h-3" /> {co.hq_location}</span></td>
+                        <td className="p-3 text-muted-foreground hidden lg:table-cell">{co.estimated_size}</td>
+                        <td className="p-3"><RelevanceBar score={co.relevance_score} /></td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => setExpandedRow(expandedRow === co.name ? null : co.name)} className="p-1 rounded hover:bg-muted text-muted-foreground">
+                              {expandedRow === co.name ? <FiChevronUp className="w-4 h-4" /> : <FiChevronDown className="w-4 h-4" />}
+                            </button>
+                            <button onClick={() => removeCompany(co.name)} className="p-1 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600">
+                              <FiTrash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {expandedRow === co.name && (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-4 bg-muted/20">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Relevance Reasoning</h4>
+                                <p className="text-sm text-foreground leading-relaxed">{co.relevance_reasoning}</p>
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Details</h4>
+                                <div className="space-y-1 text-sm">
+                                  <p><span className="text-muted-foreground">Industry:</span> <span className="text-foreground">{co.industry}</span></p>
+                                  <p><span className="text-muted-foreground">Location:</span> <span className="text-foreground">{co.hq_location}</span></p>
+                                  <p><span className="text-muted-foreground">Est. Size:</span> <span className="text-foreground">{co.estimated_size}</span></p>
+                                  <p><span className="text-muted-foreground">Score:</span> <span className="text-foreground">{co.relevance_score}/10</span></p>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── ENRICHMENT VIEW ─────────────────────────────────────────────────────────
+function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, onFindContacts }: {
+  campaign: Campaign
+  onUpdateCampaign: (c: Campaign) => void
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+  onFindContacts: () => void
+}) {
+  const enriched = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
+  const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
+  const selectedCount = enriched.filter(c => c.selected).length
+
+  const toggleSelect = (name: string) => {
+    const updated = enriched.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
+    onUpdateCampaign({ ...campaign, enrichedCompanies: updated, updatedAt: new Date().toISOString() })
+  }
+
+  const togglePriority = (name: string) => {
+    const updated = enriched.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
+    const flags = updated.filter(c => c.priority).map(c => c.company_name)
+    onUpdateCampaign({ ...campaign, enrichedCompanies: updated, priority_flags: flags, updatedAt: new Date().toISOString() })
+  }
+
+  return (
+    <div>
+      <ProgressStepper stage="enrichment" />
+
+      {campaign.enrichmentSummary && (
+        <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+          <div className="flex items-start gap-2">
+            <HiOutlineSparkles className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.enrichmentSummary)}</div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-red-700 text-sm"><FiAlertCircle className="w-4 h-4 flex-shrink-0" /> <span>{error}</span></div>
+          <button onClick={onRetry} className="flex items-center gap-1 text-red-700 text-sm font-medium hover:underline flex-shrink-0 ml-2"><FiRefreshCw className="w-3.5 h-3.5" /> Retry</button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="space-y-4 mb-5">
+          <div className="flex items-center gap-2 text-sm text-primary font-medium"><FiRefreshCw className="w-4 h-4 animate-spin" /> Enriching company data with intelligence signals...</div>
+          {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      )}
+
+      {!loading && enriched.length === 0 && !error && (
+        <div className="text-center py-16 bg-card rounded-lg border border-border/30">
+          <FiDatabase className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-serif font-semibold text-foreground mb-2">No enrichment data yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich.</p>
+        </div>
+      )}
+
+      {enriched.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <span className="text-sm text-muted-foreground">{selectedCount} of {enriched.length} selected for contact finding</span>
+            <button onClick={onFindContacts} disabled={selectedCount === 0 || loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
+              <FiUsers className="w-4 h-4" /> Find Contacts ({selectedCount})
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {enriched.map(ec => {
+              const isExpanded = expandedCompany === ec.company_name
+              const newsCount = Array.isArray(ec.recent_news) ? ec.recent_news.length : 0
+              const csuiteCount = Array.isArray(ec.csuite_changes) ? ec.csuite_changes.length : 0
+              const growthCount = Array.isArray(ec.growth_indicators) ? ec.growth_indicators.length : 0
+
+              return (
+                <div key={ec.company_name} className={`bg-card rounded-lg border transition-all ${ec.selected ? 'border-primary/40 shadow-md' : 'border-border/30'}`}>
+                  <div className="p-4 flex items-center gap-3 cursor-pointer" onClick={() => setExpandedCompany(isExpanded ? null : ec.company_name)}>
+                    <button onClick={(e) => { e.stopPropagation(); toggleSelect(ec.company_name) }} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${ec.selected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                      {ec.selected && <FiCheck className="w-3 h-3" />}
+                    </button>
+
+                    <button onClick={(e) => { e.stopPropagation(); togglePriority(ec.company_name) }} className={`flex-shrink-0 ${ec.priority ? 'text-amber-500' : 'text-muted-foreground/40'} hover:text-amber-500 transition-colors`}>
+                      <FiStar className={`w-4 h-4 ${ec.priority ? 'fill-current' : ''}`} />
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-serif font-semibold text-foreground">{ec.company_name}</h3>
+                        {ec.revenue?.figure && <InlineBadge variant="accent"><FiDollarSign className="w-3 h-3 mr-0.5" />{ec.revenue.figure}</InlineBadge>}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {newsCount > 0 && <InlineBadge variant="muted">{newsCount} news</InlineBadge>}
+                        {csuiteCount > 0 && <InlineBadge variant="warning">{csuiteCount} C-suite changes</InlineBadge>}
+                        {growthCount > 0 && <InlineBadge variant="success"><FiTrendingUp className="w-3 h-3 mr-0.5" />{growthCount} growth signals</InlineBadge>}
+                      </div>
+                    </div>
+
+                    <div className="flex-shrink-0">
+                      {isExpanded ? <FiChevronUp className="w-5 h-5 text-muted-foreground" /> : <FiChevronDown className="w-5 h-5 text-muted-foreground" />}
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="px-4 pb-4 space-y-4 border-t border-border/20 pt-4">
+                      {/* Revenue */}
+                      {ec.revenue && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiDollarSign className="w-3.5 h-3.5" /> Revenue</h4>
+                          <div className="bg-muted/30 rounded-lg p-3 text-sm">
+                            <p className="font-semibold text-foreground text-lg">{ec.revenue?.figure ?? 'N/A'}</p>
+                            <p className="text-muted-foreground">Year: {ec.revenue?.year ?? 'N/A'} | Source: {ec.revenue?.source ?? 'N/A'}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Recent News */}
+                      {newsCount > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiFlag className="w-3.5 h-3.5" /> Recent News</h4>
+                          <div className="space-y-2">
+                            {ec.recent_news.map((n, i) => (
+                              <div key={i} className="bg-muted/30 rounded-lg p-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <h5 className="text-sm font-medium text-foreground">{n.headline}</h5>
+                                  <span className="text-xs text-muted-foreground flex-shrink-0">{n.date}</span>
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{n.summary}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* C-Suite Changes */}
+                      {csuiteCount > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiUsers className="w-3.5 h-3.5" /> C-Suite Changes</h4>
+                          <div className="space-y-2">
+                            {ec.csuite_changes.map((cs, i) => (
+                              <div key={i} className="bg-muted/30 rounded-lg p-3 text-sm">
+                                <p className="font-medium text-foreground">{cs.name}</p>
+                                <p className="text-muted-foreground">{cs.previous_role} <FiArrowRight className="w-3 h-3 inline mx-1" /> {cs.new_role}</p>
+                                <p className="text-xs text-muted-foreground mt-1">{cs.date}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Growth Indicators */}
+                      {growthCount > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiTrendingUp className="w-3.5 h-3.5" /> Growth Indicators</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {ec.growth_indicators.map((gi, i) => (
+                              <div key={i} className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm">
+                                <span className="font-medium text-green-800">{gi.type}:</span> <span className="text-green-700">{gi.detail}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Competitive Intel */}
+                      {ec.competitive_intel && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiBarChart2 className="w-3.5 h-3.5" /> Competitive Intelligence</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="bg-muted/30 rounded-lg p-3">
+                              <p className="text-xs font-medium text-muted-foreground mb-1.5">Vendors</p>
+                              <div className="flex flex-wrap gap-1">
+                                {Array.isArray(ec.competitive_intel?.vendors) && ec.competitive_intel.vendors.length > 0 ? ec.competitive_intel.vendors.map((v, i) => <InlineBadge key={i} variant="default">{v}</InlineBadge>) : <span className="text-xs text-muted-foreground">None listed</span>}
+                              </div>
+                            </div>
+                            <div className="bg-muted/30 rounded-lg p-3">
+                              <p className="text-xs font-medium text-muted-foreground mb-1.5">Partners</p>
+                              <div className="flex flex-wrap gap-1">
+                                {Array.isArray(ec.competitive_intel?.partners) && ec.competitive_intel.partners.length > 0 ? ec.competitive_intel.partners.map((p, i) => <InlineBadge key={i} variant="success">{p}</InlineBadge>) : <span className="text-xs text-muted-foreground">None listed</span>}
+                              </div>
+                            </div>
+                            <div className="bg-muted/30 rounded-lg p-3">
+                              <p className="text-xs font-medium text-muted-foreground mb-1.5">Competitors</p>
+                              <div className="flex flex-wrap gap-1">
+                                {Array.isArray(ec.competitive_intel?.competitors) && ec.competitive_intel.competitors.length > 0 ? ec.competitive_intel.competitors.map((c, i) => <InlineBadge key={i} variant="warning">{c}</InlineBadge>) : <span className="text-xs text-muted-foreground">None listed</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── CONTACTS VIEW ───────────────────────────────────────────────────────────
+function ContactsView({ campaign, loading, error, onRetry }: {
+  campaign: Campaign
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+}) {
+  const companyContacts = Array.isArray(campaign.contacts) ? campaign.contacts : []
+  const artifactFiles = Array.isArray(campaign.artifactFiles) ? campaign.artifactFiles : []
+  const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (companyContacts.length > 0 && !expandedCompany) {
+      setExpandedCompany(companyContacts[0]?.company_name ?? null)
+    }
+  }, [companyContacts, expandedCompany])
+
+  const emailStatusBadge = (status: string) => {
+    const s = (status ?? '').toLowerCase()
+    if (s === 'verified' || s === 'valid') return <InlineBadge variant="success"><FiCheckCircle className="w-3 h-3 mr-0.5" />Verified</InlineBadge>
+    if (s === 'unverified' || s === 'guessed') return <InlineBadge variant="warning">Unverified</InlineBadge>
+    return <InlineBadge variant="muted">{status || 'Unknown'}</InlineBadge>
+  }
+
+  const seniorityBadge = (seniority: string) => {
+    const s = (seniority ?? '').toLowerCase()
+    if (s.includes('c-suite') || s.includes('c_suite') || s === 'owner' || s === 'founder') return <InlineBadge variant="accent">{seniority}</InlineBadge>
+    if (s.includes('vp') || s.includes('vice')) return <InlineBadge variant="default">{seniority}</InlineBadge>
+    if (s.includes('director')) return <InlineBadge variant="muted">{seniority}</InlineBadge>
+    return <InlineBadge variant="muted">{seniority || 'N/A'}</InlineBadge>
+  }
+
+  return (
+    <div>
+      <ProgressStepper stage="contacts" />
+
+      {campaign.contactSummary && (
+        <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+          <div className="flex items-start gap-2">
+            <HiOutlineSparkles className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.contactSummary)}</div>
+          </div>
+          {(campaign.totalContactsFound ?? 0) > 0 && (
+            <div className="mt-2 text-sm font-medium text-primary flex items-center gap-1"><FiUsers className="w-4 h-4" /> Total contacts found: {campaign.totalContactsFound}</div>
+          )}
+        </div>
+      )}
+
+      {artifactFiles.length > 0 && (
+        <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+          <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-1 font-serif tracking-wide"><FiDownload className="w-4 h-4" /> Exported Files</h3>
+          <div className="space-y-2">
+            {artifactFiles.map((f, i) => (
+              <a key={i} href={f.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2.5 rounded-lg bg-muted/30 hover:bg-muted/60 transition-colors text-sm text-primary hover:underline">
+                <FiDownload className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{f.name || `Export ${i + 1}`}</span>
+                {f.format_type && <InlineBadge variant="muted">{f.format_type.toUpperCase()}</InlineBadge>}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-red-700 text-sm"><FiAlertCircle className="w-4 h-4 flex-shrink-0" /> <span>{error}</span></div>
+          <button onClick={onRetry} className="flex items-center gap-1 text-red-700 text-sm font-medium hover:underline flex-shrink-0 ml-2"><FiRefreshCw className="w-3.5 h-3.5" /> Retry</button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="space-y-4 mb-5">
+          <div className="flex items-center gap-2 text-sm text-primary font-medium"><FiRefreshCw className="w-4 h-4 animate-spin" /> Finding verified contacts via Apollo...</div>
+          {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      )}
+
+      {!loading && companyContacts.length === 0 && !error && (
+        <div className="text-center py-16 bg-card rounded-lg border border-border/30">
+          <FiUsers className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-serif font-semibold text-foreground mb-2">No contacts found yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the enrichment stage and select companies to find contacts for.</p>
+        </div>
+      )}
+
+      {companyContacts.length > 0 && (
+        <div className="space-y-3">
+          {companyContacts.map(cc => {
+            const contacts = Array.isArray(cc.contacts) ? cc.contacts : []
+            const isExpanded = expandedCompany === cc.company_name
+
+            return (
+              <div key={cc.company_name} className="bg-card rounded-lg border border-border/30 overflow-hidden">
+                <button className="w-full p-4 flex items-center justify-between text-left hover:bg-muted/20 transition-colors" onClick={() => setExpandedCompany(isExpanded ? null : cc.company_name)}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <HiOutlineBuildingOffice2 className="w-5 h-5 text-primary" />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="font-serif font-semibold text-foreground">{cc.company_name}</h3>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                        {cc.organization_data?.domain && <span className="flex items-center gap-0.5"><FiGlobe className="w-3 h-3" />{cc.organization_data.domain}</span>}
+                        {cc.organization_data?.employee_count && <span className="flex items-center gap-0.5"><FiUsers className="w-3 h-3" />{cc.organization_data.employee_count} emp.</span>}
+                        {cc.organization_data?.industry && <span className="flex items-center gap-0.5"><FiBriefcase className="w-3 h-3" />{cc.organization_data.industry}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <InlineBadge variant="default">{contacts.length} contacts</InlineBadge>
+                    {isExpanded ? <FiChevronUp className="w-5 h-5 text-muted-foreground" /> : <FiChevronDown className="w-5 h-5 text-muted-foreground" />}
+                  </div>
+                </button>
+
+                {isExpanded && contacts.length > 0 && (
+                  <div className="border-t border-border/20 divide-y divide-border/20">
+                    {contacts.map((ct, ci) => {
+                      const initials = (ct.full_name ?? '').split(' ').map(n => (n[0] ?? '').toUpperCase()).join('').slice(0, 2)
+                      return (
+                        <div key={ci} className="p-4 hover:bg-muted/10 transition-colors">
+                          <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary font-semibold text-sm">
+                              {initials}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-medium text-foreground">{ct.full_name}</h4>
+                                {seniorityBadge(ct.seniority)}
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-0.5">{ct.title}</p>
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm">
+                                {ct.email && (
+                                  <span className="flex items-center gap-1 flex-wrap">
+                                    <FiMail className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                                    <a href={`mailto:${ct.email}`} className="text-primary hover:underline break-all">{ct.email}</a>
+                                    {emailStatusBadge(ct.email_status)}
+                                  </span>
+                                )}
+                                {ct.phone && (
+                                  <span className="flex items-center gap-1 text-muted-foreground">
+                                    <FiPhone className="w-3.5 h-3.5 flex-shrink-0" /> {ct.phone}
+                                  </span>
+                                )}
+                                {ct.linkedin_url && (
+                                  <a href={ct.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline">
+                                    <FiExternalLink className="w-3.5 h-3.5 flex-shrink-0" /> LinkedIn
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── MAIN PAGE ───────────────────────────────────────────────────────────────
+export default function Page() {
+  const [campaigns, setCampaigns] = useState<Campaign[]>([])
+  const [activeCampaignId, setActiveCampaignId] = useState<string | null>(null)
+  const [view, setView] = useState<AppView>('dashboard')
+  const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>('all')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [showNewCampaign, setShowNewCampaign] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [sampleDataOn, setSampleDataOn] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [activeAgentId, setActiveAgentId] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    const stored = loadCampaigns()
+    setCampaigns(stored)
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (mounted) {
+      saveCampaigns(campaigns)
+    }
+  }, [campaigns, mounted])
+
+  const displayCampaigns = useMemo(() => {
+    if (sampleDataOn) {
+      const hasSample = campaigns.some(c => c.id === 'sample-1')
+      if (!hasSample) return [getSampleCampaign(), ...campaigns]
+    }
+    return campaigns
+  }, [campaigns, sampleDataOn])
+
+  const activeCampaign = useMemo(() => {
+    if (!activeCampaignId) return null
+    if (activeCampaignId === 'sample-1' && sampleDataOn) return getSampleCampaign()
+    return campaigns.find(c => c.id === activeCampaignId) ?? null
+  }, [campaigns, activeCampaignId, sampleDataOn])
+
+  const createCampaign = useCallback((name: string, directive: string, filters: CampaignFilters) => {
+    const now = new Date().toISOString()
+    const newCamp: Campaign = {
+      id: generateId(), name, directive, filters,
+      companies: [], enrichedCompanies: [], contacts: [], artifactFiles: [],
+      stage: 'discovery', createdAt: now, updatedAt: now, priority_flags: [],
+    }
+    setCampaigns(prev => [newCamp, ...prev])
+    setActiveCampaignId(newCamp.id)
+    setView('campaign')
+    setShowNewCampaign(false)
+  }, [])
+
+  const updateCampaign = useCallback((updated: Campaign) => {
+    setCampaigns(prev => prev.map(c => c.id === updated.id ? updated : c))
+  }, [])
+
+  const selectCampaign = useCallback((id: string) => {
+    setActiveCampaignId(id)
+    setView('campaign')
+    setError(null)
+  }, [])
+
+  // ─ Agent Calls ─
+  const runDiscovery = useCallback(async (campaign: Campaign) => {
+    setLoading(true)
+    setError(null)
+    setActiveAgentId(DISCOVERY_AGENT_ID)
+    const filtersStr = campaign.filters ? JSON.stringify(campaign.filters) : 'No specific filters'
+    const message = `Business directive: ${campaign.directive}. Filters: ${filtersStr}. Find 20-50 target companies.`
+    try {
+      const result = await callAIAgent(message, DISCOVERY_AGENT_ID)
+      const parsed = parseAgentResult(result)
+      if (!parsed) {
+        setError('Failed to parse discovery results. Please try again.')
+        setLoading(false)
+        setActiveAgentId(null)
+        return
+      }
+      const companies: Company[] = Array.isArray(parsed?.companies)
+        ? parsed.companies.map((c: any) => ({
+            name: c?.name ?? '', industry: c?.industry ?? '', hq_location: c?.hq_location ?? '',
+            estimated_size: c?.estimated_size ?? '', relevance_score: typeof c?.relevance_score === 'number' ? c.relevance_score : 0,
+            relevance_reasoning: c?.relevance_reasoning ?? '', website: c?.website ?? '', selected: true,
+          }))
+        : []
+      updateCampaign({ ...campaign, companies, stage: 'discovery', searchSummary: parsed?.search_summary ?? '', updatedAt: new Date().toISOString() })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Discovery failed. Please try again.')
+    }
+    setLoading(false)
+    setActiveAgentId(null)
+  }, [updateCampaign])
+
+  const runEnrichment = useCallback(async (campaign: Campaign) => {
+    const selected = (campaign.companies ?? []).filter(c => c.selected)
+    if (selected.length === 0) return
+    setLoading(true)
+    setError(null)
+    setActiveAgentId(ENRICHMENT_AGENT_ID)
+    const companiesPayload = selected.map(c => ({ name: c.name, industry: c.industry, hq_location: c.hq_location, estimated_size: c.estimated_size, website: c.website }))
+    const message = `Enrich the following companies with revenue, news, C-suite changes, growth indicators, and competitive intelligence: ${JSON.stringify(companiesPayload)}`
+    try {
+      const result = await callAIAgent(message, ENRICHMENT_AGENT_ID)
+      const parsed = parseAgentResult(result)
+      if (!parsed) {
+        setError('Failed to parse enrichment results. Please try again.')
+        setLoading(false)
+        setActiveAgentId(null)
+        return
+      }
+      const enriched: EnrichedCompany[] = Array.isArray(parsed?.enriched_companies)
+        ? parsed.enriched_companies.map((ec: any) => ({
+            company_name: ec?.company_name ?? '',
+            revenue: { figure: ec?.revenue?.figure ?? 'N/A', year: ec?.revenue?.year ?? '', source: ec?.revenue?.source ?? '' },
+            recent_news: Array.isArray(ec?.recent_news) ? ec.recent_news.map((n: any) => ({ date: n?.date ?? '', headline: n?.headline ?? '', summary: n?.summary ?? '' })) : [],
+            csuite_changes: Array.isArray(ec?.csuite_changes) ? ec.csuite_changes.map((cs: any) => ({ name: cs?.name ?? '', new_role: cs?.new_role ?? '', previous_role: cs?.previous_role ?? '', date: cs?.date ?? '' })) : [],
+            growth_indicators: Array.isArray(ec?.growth_indicators) ? ec.growth_indicators.map((gi: any) => ({ type: gi?.type ?? '', detail: gi?.detail ?? '' })) : [],
+            competitive_intel: {
+              vendors: Array.isArray(ec?.competitive_intel?.vendors) ? ec.competitive_intel.vendors : [],
+              partners: Array.isArray(ec?.competitive_intel?.partners) ? ec.competitive_intel.partners : [],
+              competitors: Array.isArray(ec?.competitive_intel?.competitors) ? ec.competitive_intel.competitors : [],
+            },
+            selected: true,
+          }))
+        : []
+      updateCampaign({ ...campaign, enrichedCompanies: enriched, stage: 'enrichment', enrichmentSummary: parsed?.enrichment_summary ?? '', updatedAt: new Date().toISOString() })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Enrichment failed. Please try again.')
+    }
+    setLoading(false)
+    setActiveAgentId(null)
+  }, [updateCampaign])
+
+  const runContactFinder = useCallback(async (campaign: Campaign) => {
+    const selected = (campaign.enrichedCompanies ?? []).filter(c => c.selected)
+    if (selected.length === 0) return
+    setLoading(true)
+    setError(null)
+    setActiveAgentId(CONTACT_AGENT_ID)
+    const companiesPayload = selected.map(c => ({ company_name: c.company_name, revenue: c.revenue?.figure }))
+    const message = `Find verified decision-maker contacts for these companies: ${JSON.stringify(companiesPayload)}. Look for C-suite, VP, and Director level contacts.`
+    try {
+      const result = await callAIAgent(message, CONTACT_AGENT_ID)
+      const parsed = parseAgentResult(result)
+      if (!parsed) {
+        setError('Failed to parse contact results. Please try again.')
+        setLoading(false)
+        setActiveAgentId(null)
+        return
+      }
+      const compContacts: CompanyContacts[] = Array.isArray(parsed?.company_contacts)
+        ? parsed.company_contacts.map((cc: any) => ({
+            company_name: cc?.company_name ?? '',
+            contacts: Array.isArray(cc?.contacts) ? cc.contacts.map((ct: any) => ({
+              full_name: ct?.full_name ?? '', title: ct?.title ?? '', seniority: ct?.seniority ?? '',
+              email: ct?.email ?? '', email_status: ct?.email_status ?? '', phone: ct?.phone ?? '', linkedin_url: ct?.linkedin_url ?? '',
+            })) : [],
+            organization_data: {
+              apollo_id: cc?.organization_data?.apollo_id ?? '', domain: cc?.organization_data?.domain ?? '',
+              employee_count: cc?.organization_data?.employee_count ?? '', industry: cc?.organization_data?.industry ?? '',
+            },
+          }))
+        : []
+      const files: ArtifactFile[] = Array.isArray(result?.module_outputs?.artifact_files)
+        ? result.module_outputs!.artifact_files.map((f: any) => ({ file_url: f?.file_url ?? '', name: f?.name ?? '', format_type: f?.format_type ?? '' }))
+        : []
+      const totalFound = typeof parsed?.total_contacts_found === 'number' ? parsed.total_contacts_found : compContacts.reduce((acc, cc) => acc + (Array.isArray(cc.contacts) ? cc.contacts.length : 0), 0)
+      updateCampaign({ ...campaign, contacts: compContacts, artifactFiles: files, stage: 'contacts', contactSummary: parsed?.search_summary ?? '', totalContactsFound: totalFound, updatedAt: new Date().toISOString() })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Contact finding failed. Please try again.')
+    }
+    setLoading(false)
+    setActiveAgentId(null)
+  }, [updateCampaign])
+
+  const currentCampaign = view === 'campaign' ? activeCampaign : null
+  const isSampleCampaign = activeCampaignId === 'sample-1'
+
+  const getAccessibleStages = (c: Campaign | null): Campaign['stage'][] => {
+    if (!c) return ['discovery']
+    const stages: Campaign['stage'][] = ['discovery']
+    if ((c.companies?.length ?? 0) > 0) stages.push('enrichment')
+    if ((c.enrichedCompanies?.length ?? 0) > 0) stages.push('contacts')
+    return stages
+  }
+
+  const stageLabels: Record<string, string> = { discovery: 'Prospect List', enrichment: 'Enriched Data', contacts: 'Contacts', completed: 'Contacts' }
+
+  return (
+    <ErrorBoundary>
+      <div style={THEME_VARS} className="min-h-screen bg-background text-foreground flex">
+        <AppSidebar
+          campaigns={displayCampaigns}
+          activeCampaignId={activeCampaignId}
+          sidebarFilter={sidebarFilter}
+          onFilterChange={setSidebarFilter}
+          onSelectCampaign={selectCampaign}
+          onNewCampaign={() => setShowNewCampaign(true)}
+          onViewDashboard={() => { setView('dashboard'); setActiveCampaignId(null); setError(null) }}
+          activeAgentId={activeAgentId}
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+
+        <main className="flex-1 min-w-0 flex flex-col">
+          <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-sm border-b border-border/20 px-6 py-3 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              {view === 'dashboard' && <h2 className="font-serif font-bold text-foreground text-lg tracking-wide">Dashboard</h2>}
+              {view === 'campaign' && currentCampaign && (
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground flex-wrap">
+                  <button onClick={() => { setView('dashboard'); setActiveCampaignId(null); setError(null) }} className="hover:text-primary transition-colors font-medium">ProspectIQ</button>
+                  <FiChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="text-foreground font-medium truncate max-w-[200px]">{currentCampaign.name}</span>
+                  <FiChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="text-primary font-medium capitalize">{currentCampaign.stage}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                <span className="hidden sm:inline">Sample Data</span>
+                <button onClick={() => setSampleDataOn(!sampleDataOn)} className={`relative w-10 h-5 rounded-full transition-colors ${sampleDataOn ? 'bg-primary' : 'bg-muted'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${sampleDataOn ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </label>
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-semibold">U</div>
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-y-auto p-6">
+            {view === 'dashboard' && (
+              <DashboardView
+                campaigns={displayCampaigns}
+                onSelectCampaign={selectCampaign}
+                onNewCampaign={() => setShowNewCampaign(true)}
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
+              />
+            )}
+
+            {view === 'campaign' && currentCampaign && (
+              <div className="max-w-5xl mx-auto">
+                <div className="flex gap-1 mb-6 bg-card rounded-lg p-1 border border-border/30 overflow-x-auto">
+                  {getAccessibleStages(currentCampaign).map(s => {
+                    const isActive = currentCampaign.stage === s || (currentCampaign.stage === 'completed' && s === 'contacts')
+                    return (
+                      <button key={s} onClick={() => {
+                        if (!isSampleCampaign) {
+                          updateCampaign({ ...currentCampaign, stage: s, updatedAt: new Date().toISOString() })
+                        }
+                      }} className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${isActive ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
+                        {stageLabels[s] ?? s}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div className="bg-muted/30 rounded-lg p-4 mb-6 border border-border/20">
+                  <h3 className="font-serif font-semibold text-foreground text-base mb-1">{currentCampaign.name}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{currentCampaign.directive}</p>
+                  {currentCampaign.filters && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {currentCampaign.filters.geography && <InlineBadge variant="muted"><FiMapPin className="w-3 h-3 mr-0.5" />{currentCampaign.filters.geography}</InlineBadge>}
+                      {currentCampaign.filters.sizeRange && <InlineBadge variant="muted"><FiUsers className="w-3 h-3 mr-0.5" />{currentCampaign.filters.sizeRange}</InlineBadge>}
+                      {Array.isArray(currentCampaign.filters.industries) && currentCampaign.filters.industries.map((ind, i) => <InlineBadge key={i} variant="muted"><FiBriefcase className="w-3 h-3 mr-0.5" />{ind}</InlineBadge>)}
+                    </div>
+                  )}
+                </div>
+
+                {currentCampaign.stage === 'discovery' && (
+                  <DiscoveryView
+                    campaign={currentCampaign}
+                    onUpdateCampaign={updated => { if (!isSampleCampaign) updateCampaign(updated) }}
+                    loading={loading}
+                    error={error}
+                    onRetry={() => { if (!isSampleCampaign) runDiscovery(currentCampaign) }}
+                    onEnrich={() => {
+                      if (isSampleCampaign) return
+                      const updated = { ...currentCampaign, stage: 'enrichment' as const, updatedAt: new Date().toISOString() }
+                      updateCampaign(updated)
+                      runEnrichment(updated)
+                    }}
+                    activeAgentId={activeAgentId}
+                  />
+                )}
+
+                {currentCampaign.stage === 'enrichment' && (
+                  <EnrichmentView
+                    campaign={currentCampaign}
+                    onUpdateCampaign={updated => { if (!isSampleCampaign) updateCampaign(updated) }}
+                    loading={loading}
+                    error={error}
+                    onRetry={() => { if (!isSampleCampaign) runEnrichment(currentCampaign) }}
+                    onFindContacts={() => {
+                      if (isSampleCampaign) return
+                      const updated = { ...currentCampaign, stage: 'contacts' as const, updatedAt: new Date().toISOString() }
+                      updateCampaign(updated)
+                      runContactFinder(updated)
+                    }}
+                  />
+                )}
+
+                {(currentCampaign.stage === 'contacts' || currentCampaign.stage === 'completed') && (
+                  <ContactsView
+                    campaign={currentCampaign}
+                    loading={loading}
+                    error={error}
+                    onRetry={() => { if (!isSampleCampaign) runContactFinder(currentCampaign) }}
+                  />
+                )}
+              </div>
+            )}
+
+            {view === 'campaign' && !currentCampaign && (
+              <div className="text-center py-20">
+                <FiAlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <h2 className="text-lg font-serif font-semibold text-foreground mb-2">Campaign not found</h2>
+                <button onClick={() => { setView('dashboard'); setActiveCampaignId(null) }} className="text-sm text-primary hover:underline mt-2">Back to Dashboard</button>
+              </div>
+            )}
+          </div>
+        </main>
+
+        <NewCampaignModal open={showNewCampaign} onClose={() => setShowNewCampaign(false)} onCreate={createCampaign} />
+      </div>
+    </ErrorBoundary>
   )
 }
