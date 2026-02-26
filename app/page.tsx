@@ -1630,44 +1630,125 @@ export default function Page() {
       : []
   }
 
-  // Build a focused, semantic enrichment prompt for a single company
-  const buildEnrichmentPrompt = useCallback((company: Company): string => {
+  // Build focused, contextual enrichment prompt using campaign directive + company specifics
+  const buildEnrichmentPrompt = useCallback((company: Company, campaign: Campaign): string => {
     const name = company.name
     const industry = company.industry || 'technology'
     const location = company.hq_location || ''
     const size = company.estimated_size || ''
     const website = company.website || ''
+    const segment = company.source_segment || ''
+    const year = new Date().getFullYear()
 
-    return `Research the company "${name}" and provide comprehensive business intelligence.
+    // Extract key business context from the campaign directive
+    const directive = campaign.directive || ''
+    const geography = campaign.filters?.geography || ''
+    const targetIndustries = campaign.filters?.industries?.join(', ') || industry
 
-Company context:
-- Name: ${name}
-- Industry: ${industry}
-${location ? `- Headquarters: ${location}` : ''}
-${size ? `- Estimated size: ${size} employees` : ''}
-${website ? `- Website: ${website}` : ''}
+    // Build industry-specific terms for narrow searches
+    const industryTerms = industry.toLowerCase()
+    const isInfra = /data center|cloud|infrastructure|colocation|hosting/i.test(industryTerms)
+    const isSaaS = /saas|software|platform/i.test(industryTerms)
+    const isCyber = /cyber|security|endpoint|threat/i.test(industryTerms)
+    const isFintech = /fintech|financial|banking|payments/i.test(industryTerms)
+    const isHealthtech = /health|medical|pharma|biotech/i.test(industryTerms)
 
-Perform the following targeted research queries for "${name}":
+    // Industry-specific revenue search terms
+    const revenueTerms = isInfra
+      ? `"${name} revenue colocation", "${name} data center revenue ${year}", "${name} annual report ${year}", "${name} EBITDA"`
+      : isSaaS
+      ? `"${name} ARR ${year}", "${name} SaaS revenue", "${name} annual recurring revenue", "${name} Series funding valuation"`
+      : isCyber
+      ? `"${name} cybersecurity revenue", "${name} ARR ${year}", "${name} security market share"`
+      : isFintech
+      ? `"${name} fintech revenue", "${name} transaction volume", "${name} AUM assets under management"`
+      : `"${name} revenue ${year}", "${name} annual revenue", "${name} funding valuation"`
 
-1. REVENUE & FINANCIALS: Search for "${name} revenue", "${name} annual revenue ${new Date().getFullYear()}", "${name} funding rounds", "${name} valuation". For private companies, check Crunchbase, PitchBook, CB Insights estimates. For public companies, check latest quarterly/annual earnings.
+    // Industry-specific news terms tied to the directive context
+    const newsContext = directive
+      ? directive.split(/[,.;]/).slice(0, 3).map(s => s.trim()).filter(s => s.length > 10).map(s => {
+          // Extract key noun phrases from directive segments
+          const words = s.split(' ').filter(w => w.length > 3 && !/^(with|that|from|have|been|their|this|these|those|which|where|about|into|more|also|very|such|each|some|most|than|then|when|what|them|they|will|would|could|should)$/i.test(w))
+          return words.slice(0, 4).join(' ')
+        }).filter(Boolean)
+      : []
 
-2. RECENT NEWS & DEVELOPMENTS: Search for "${name} news ${new Date().getFullYear()}", "${name} announcements", "${name} press releases". Find the 3 most significant recent events — funding rounds, product launches, acquisitions, partnerships, regulatory actions, or market moves.
+    const newsTerms = [
+      `"${name} ${industry} ${year}"`,
+      geography ? `"${name} ${geography} expansion ${year}"` : `"${name} expansion ${year}"`,
+      ...newsContext.slice(0, 2).map(ctx => `"${name} ${ctx}"`),
+      isInfra ? `"${name} data center construction ${year}", "${name} hyperscale capacity MW"` : '',
+      isSaaS ? `"${name} product launch ${year}", "${name} enterprise customers"` : '',
+      isCyber ? `"${name} security breach detection", "${name} threat intelligence ${year}"` : '',
+    ].filter(Boolean).join(', ')
 
-3. EXECUTIVE LEADERSHIP: Search for "${name} CEO", "${name} leadership team", "${name} executive appointments ${new Date().getFullYear()}", "${name} C-suite changes". Identify any recent hires, departures, or role changes at the C-suite, SVP, or VP level.
+    // Industry-specific growth terms
+    const growthTerms = [
+      geography ? `"${name} expansion ${geography}"` : '',
+      `"${name} hiring ${industry} ${year}"`,
+      `"${name} new ${geography || 'market'} ${year}"`,
+      isInfra ? `"${name} new data center site", "${name} MW capacity expansion", "${name} land acquisition"` : '',
+      isSaaS ? `"${name} customer growth", "${name} new product feature", "${name} enterprise adoption"` : '',
+      isCyber ? `"${name} SOC expansion", "${name} new security capabilities"` : '',
+      `"${name} Series funding ${year}"`,
+      `"${name} job openings ${industry}"`,
+    ].filter(Boolean).join(', ')
 
-4. GROWTH SIGNALS: Search for "${name} hiring", "${name} expansion", "${name} new office", "${name} job openings", "${name} growth". Look for indicators like: headcount growth, new market entry, geographic expansion, new product lines, increasing job postings, office openings.
+    // Industry-specific competitive terms
+    const competitorTerms = [
+      `"${name} vs" ${industry}`,
+      `"${name} competitors ${industry}"`,
+      `"${name} market share ${industry}"`,
+      isInfra ? `"${name} vs Equinix", "${name} vs Digital Realty", "${name} colocation competitors", "${name} cloud partners"` : '',
+      isSaaS ? `"${name} alternatives", "${name} vs" site:g2.com, "${name} technology stack"` : '',
+      isCyber ? `"${name} vs CrowdStrike", "${name} vs Palo Alto", "${name} security comparison"` : '',
+    ].filter(Boolean).join(', ')
 
-5. COMPETITIVE LANDSCAPE: Search for "${name} competitors", "${name} vs", "${name} technology stack", "${name} partners". Identify: direct competitors in their space, technology vendors/platforms they use, strategic partnerships or alliances.
+    return `Deep-research "${name}" — a ${industry} company${location ? ` headquartered in ${location}` : ''}${size ? ` with approximately ${size} employees` : ''}.
 
-Return your findings as structured JSON for this ONE company. Every field must be populated — use "Not publicly disclosed" for revenue if unavailable, and empty arrays if no data found for a category.`
+CAMPAIGN CONTEXT: ${directive || `Research ${industry} companies`}
+${geography ? `TARGET GEOGRAPHY: ${geography}` : ''}
+${segment ? `DISCOVERY SEGMENT: ${segment}` : ''}
+${website ? `COMPANY WEBSITE: ${website}` : ''}
+
+Execute these SPECIFIC search queries — do not use generic searches. Each query is crafted for "${name}" in the ${industry} sector:
+
+1. REVENUE & FINANCIALS
+   Search: ${revenueTerms}
+   Also check: "${name}" site:crunchbase.com, "${name}" site:pitchbook.com, "${name} investor relations"
+   For public companies: check latest 10-K, 10-Q filings. For private: look for funding round press releases with valuations.
+
+2. RECENT STRATEGIC DEVELOPMENTS (${year})
+   Search: ${newsTerms}
+   Focus on: strategic moves relevant to ${targetIndustries} — NOT generic company PR. Prioritize acquisitions, ${geography ? `${geography} expansion` : 'market expansion'}, major contract wins, regulatory changes, technology partnerships, and capacity/capability announcements.
+   Find 3-5 significant items with exact dates.
+
+3. EXECUTIVE & LEADERSHIP CHANGES
+   Search: "${name} CEO ${year}", "${name} appoints chief", "${name} new CTO", "${name} executive team ${year}", "${name} leadership changes"
+   ${isInfra ? `Also: "${name} VP operations", "${name} head of ${geography || 'APAC'}"` : ''}
+   ${isSaaS ? `Also: "${name} VP engineering", "${name} chief product officer"` : ''}
+   Look for appointments, departures, and board changes in the last 12 months.
+
+4. GROWTH & EXPANSION SIGNALS
+   Search: ${growthTerms}
+   ${isInfra ? `Key metrics: MW under construction, number of facilities, CapEx plans, land bank acquisitions, interconnection growth.` : ''}
+   ${isSaaS ? `Key metrics: customer count growth, NRR, new product launches, platform capabilities.` : ''}
+   Look for concrete numbers: headcount increase %, new office locations, CapEx commitments, job posting counts.
+
+5. COMPETITIVE & ECOSYSTEM INTELLIGENCE
+   Search: ${competitorTerms}
+   Map: (a) direct competitors in ${industry}${geography ? ` specifically in ${geography}` : ''}, (b) technology/infrastructure vendors they rely on, (c) channel/strategic partners, (d) any vendor ecosystem or marketplace participation.
+
+Return structured JSON for this ONE company with specific, sourced data. No generic statements — include dollar amounts, dates, names, percentages, and MW/capacity figures where applicable.`
   }, [])
 
   // Enrich a single company with both models in parallel
   const enrichSingleCompany = useCallback(async (
     company: Company,
+    campaign: Campaign,
     onComplete: (name: string, gemini: EnrichedCompany | null, sonar: EnrichedCompany | null) => void
   ) => {
-    const message = buildEnrichmentPrompt(company)
+    const message = buildEnrichmentPrompt(company, campaign)
     const start = Date.now()
 
     const [geminiResult, sonarResult] = await Promise.allSettled([
@@ -1721,7 +1802,7 @@ Return your findings as structured JSON for this ONE company. Every field must b
       let completedCount = 0
 
       const processCompany = (company: Company) => {
-        return enrichSingleCompany(company, (name, gemini, sonar) => {
+        return enrichSingleCompany(company, campaign, (name, gemini, sonar) => {
           completedCount++
           if (gemini) geminiResults.push(gemini)
           if (sonar) sonarResults.push(sonar)
