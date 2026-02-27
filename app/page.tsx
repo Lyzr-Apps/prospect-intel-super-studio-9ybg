@@ -1284,14 +1284,21 @@ function NewCampaignModal({ open, onClose, onCreate }: {
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Target Company Count</label>
-            <div className="flex flex-wrap gap-2">
-              {[50, 100, 200, 300, 500].map(count => (
-                <button key={count} onClick={() => setTargetCount(count)} className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${targetCount === count ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
-                  {count}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1.5">Higher counts use multi-segment parallel research for broader coverage.</p>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={targetCount}
+              onChange={e => {
+                const val = parseInt(e.target.value, 10)
+                if (!isNaN(val) && val > 0) setTargetCount(val)
+                else if (e.target.value === '') setTargetCount(0)
+              }}
+              onBlur={() => { if (targetCount < 1) setTargetCount(50) }}
+              placeholder="e.g., 50, 100, 250..."
+              className="w-full px-3 py-2.5 rounded-lg bg-background border border-border/30 text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <p className="text-xs text-muted-foreground mt-1.5">Enter any number. Higher counts use multi-segment parallel research for broader coverage.</p>
           </div>
 
           <button onClick={() => setShowFilters(!showFilters)} className="flex items-center gap-1 text-sm text-primary font-medium hover:underline">
