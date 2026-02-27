@@ -1,0 +1,156 @@
+{
+  "agent_name": "Enrichment Manager",
+  "agent_id": "69a11c7c65fa13d86075de84",
+  "description": "Orchestrates the deep company enrichment pipeline by delegating research to 4 specialized sub-agents (Financial & Growth, News & Leadership, Competitive & Market Intel, Risk & Workforce), then consolidates and validates all findings through a sales leader lens. Ensures intelligence is actionable, specific, and free of named service providers.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "enriched_companies": [
+      {
+        "company_name": "string",
+        "revenue": {
+          "figure": "string",
+          "year": "string",
+          "source": "string"
+        },
+        "recent_news": [
+          {
+            "date": "string",
+            "headline": "string",
+            "summary": "string",
+            "sales_relevance": "string"
+          }
+        ],
+        "csuite_changes": [
+          {
+            "name": "string",
+            "new_role": "string",
+            "previous_role": "string",
+            "date": "string"
+          }
+        ],
+        "growth_indicators": [
+          {
+            "type": "string",
+            "detail": "string",
+            "implications": "string"
+          }
+        ],
+        "competitive_intel": {
+          "vendors": [
+            "string"
+          ],
+          "partners": [
+            "string"
+          ],
+          "competitors": [
+            "string"
+          ]
+        },
+        "risk_insurance_challenges": [
+          {
+            "challenge": "string",
+            "trigger_event": "string",
+            "urgency": "string",
+            "relevant_service": "string",
+            "service_provider": "string",
+            "conversation_opener": "string"
+          }
+        ],
+        "hr_workforce_challenges": [
+          {
+            "challenge": "string",
+            "trigger_event": "string",
+            "urgency": "string",
+            "relevant_service": "string",
+            "service_provider": "string",
+            "conversation_opener": "string"
+          }
+        ],
+        "key_sales_nuggets": [
+          {
+            "nugget": "string",
+            "category": "string",
+            "source": "string",
+            "talking_point": "string"
+          }
+        ]
+      }
+    ]
+  },
+  "example_response": {
+    "enriched_companies": [
+      {
+        "company_name": "sample string",
+        "revenue": {
+          "figure": "sample string",
+          "year": "sample string",
+          "source": "sample string"
+        },
+        "recent_news": [
+          {
+            "date": "sample string",
+            "headline": "sample string",
+            "summary": "sample string",
+            "sales_relevance": "sample string"
+          }
+        ],
+        "csuite_changes": [
+          {
+            "name": "sample string",
+            "new_role": "sample string",
+            "previous_role": "sample string",
+            "date": "sample string"
+          }
+        ],
+        "growth_indicators": [
+          {
+            "type": "sample string",
+            "detail": "sample string",
+            "implications": "sample string"
+          }
+        ],
+        "competitive_intel": {
+          "vendors": [
+            "sample string"
+          ],
+          "partners": [
+            "sample string"
+          ],
+          "competitors": [
+            "sample string"
+          ]
+        },
+        "risk_insurance_challenges": [
+          {
+            "challenge": "sample string",
+            "trigger_event": "sample string",
+            "urgency": "sample string",
+            "relevant_service": "sample string",
+            "service_provider": "sample string",
+            "conversation_opener": "sample string"
+          }
+        ],
+        "hr_workforce_challenges": [
+          {
+            "challenge": "sample string",
+            "trigger_event": "sample string",
+            "urgency": "sample string",
+            "relevant_service": "sample string",
+            "service_provider": "sample string",
+            "conversation_opener": "sample string"
+          }
+        ],
+        "key_sales_nuggets": [
+          {
+            "nugget": "sample string",
+            "category": "sample string",
+            "source": "sample string",
+            "talking_point": "sample string"
+          }
+        ]
+      }
+    ]
+  }
+}

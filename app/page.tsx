@@ -18,8 +18,7 @@ import { HiOutlineSparkles, HiOutlineBuildingOffice2 } from 'react-icons/hi2'
 const DISCOVERY_MANAGER_ID = '699fe64260c6ee660b2b0c26'
 const DISCOVERY_RESEARCHER_ID = '699fbc147aab67831bf8b7a7'
 const COMPANY_EXTRACTOR_ID = '699fe5da10134bfe58ea5f4f'
-const ENRICHMENT_PRIMARY_ID = '699fb657119509164a42675b'
-const ENRICHMENT_SECONDARY_ID = '699fbeb5511be0527fc9339b'
+const ENRICHMENT_MANAGER_ID = '69a11c7c65fa13d86075de84'
 const CONTACT_AGENT_ID = '699fb67d511be0527fc9338e'
 
 // ─── AGENT CONFIG (agent-agnostic labels) ────────────────────────────────────
@@ -27,7 +26,7 @@ const AGENT_CONFIG = {
   discoveryManager: { id: DISCOVERY_MANAGER_ID, name: 'Discovery Manager', desc: 'Orchestrates multi-agent discovery pipeline' },
   discoveryResearcher: { id: DISCOVERY_RESEARCHER_ID, name: 'Discovery Researcher', desc: 'Web research across news, reports & directories' },
   companyExtractor: { id: COMPANY_EXTRACTOR_ID, name: 'Company Extractor', desc: 'Extracts and structures company data from findings' },
-  enrichment: { id: ENRICHMENT_PRIMARY_ID, secondaryId: ENRICHMENT_SECONDARY_ID, name: 'Deep Enrichment', desc: 'Dual-model research with fact consolidation & sales intelligence' },
+  enrichment: { id: ENRICHMENT_MANAGER_ID, name: 'Deep Enrichment', desc: 'Multi-agent research with sales leader validation' },
   contactFinder: { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'Verified contacts via Apollo integration' },
 }
 
@@ -372,15 +371,15 @@ function getSampleCampaign(): Campaign {
         ],
         competitive_intel: { vendors: ['AWS', 'Databricks'], partners: ['Deloitte', 'Accenture'], competitors: ['Looker', 'Tableau', 'ThoughtSpot'] },
         risk_insurance_challenges: [
-          { challenge: 'Rapid international expansion creates complex regulatory compliance needs', trigger_event: 'Opened offices in London and Singapore in 2024', urgency: 'High', relevant_service: 'Global Risk Management & Compliance', service_provider: 'WTW', conversation_opener: 'With your new London and Singapore offices, have you assessed the regulatory compliance landscape across those jurisdictions for data handling and privacy?' },
-          { challenge: 'Series C funding and valuation growth increases D&O exposure', trigger_event: '$80M Series C funding round', urgency: 'Medium', relevant_service: 'Directors & Officers Liability', service_provider: 'Marsh', conversation_opener: 'Post-Series C, your board exposure has changed significantly — is your D&O coverage scaled to your new valuation?' },
+          { challenge: 'Rapid international expansion creates complex regulatory compliance needs', trigger_event: 'Opened offices in London and Singapore in 2024', urgency: 'High', relevant_service: 'Global Risk Management & Compliance', service_provider: '', conversation_opener: 'With your new London and Singapore offices, have you assessed the regulatory compliance landscape across those jurisdictions for data handling and privacy?' },
+          { challenge: 'Series C funding and valuation growth increases D&O exposure', trigger_event: '$80M Series C funding round', urgency: 'Medium', relevant_service: 'Directors & Officers Liability', service_provider: '', conversation_opener: 'Post-Series C, your board exposure has changed significantly — is your D&O coverage scaled to your new valuation?' },
         ],
         hr_workforce_challenges: [
-          { challenge: 'Aggressive hiring in competitive talent market', trigger_event: '45 open positions across engineering and sales', urgency: 'High', relevant_service: 'Total Rewards & Talent Strategy', service_provider: 'Mercer', conversation_opener: 'With 45 open roles, how are you positioning your total rewards package to compete for top data analytics talent?' },
+          { challenge: 'Aggressive hiring in competitive talent market', trigger_event: '45 open positions across engineering and sales', urgency: 'High', relevant_service: 'Total Rewards & Talent Strategy', service_provider: '', conversation_opener: 'With 45 open roles, how are you positioning your total rewards package to compete for top data analytics talent?' },
         ],
         key_sales_nuggets: [
-          { nugget: 'New CRO Sarah Chen joined from Snowflake — likely reviewing all vendor relationships', category: 'Leadership Change', source: 'Press Release Sep 2024', talking_point: 'New CROs typically reassess vendor partnerships within their first 90 days. This is an ideal time to introduce our capabilities.' },
-          { nugget: '$80M Series C with Sequoia backing signals enterprise-grade scaling needs', category: 'Funding', source: 'Crunchbase', talking_point: 'Rapid scaling after Series C typically creates gaps in risk management and employee benefits infrastructure.' },
+          { nugget: 'New CRO Sarah Chen joined from Snowflake — likely reviewing all vendor relationships', category: 'Leadership Change', source: 'Press Release Sep 2024', talking_point: 'New CROs typically reassess vendor partnerships within their first 90 days. This is an ideal window to introduce relevant advisory capabilities.' },
+          { nugget: '$80M Series C with Sequoia backing signals enterprise-grade scaling needs', category: 'Funding', source: 'Crunchbase', talking_point: 'Rapid scaling after Series C typically creates gaps in risk management and employee benefits infrastructure that advisory services can address.' },
         ],
       },
       {
@@ -395,13 +394,13 @@ function getSampleCampaign(): Campaign {
         ],
         competitive_intel: { vendors: ['Microsoft Azure'], partners: ['PwC'], competitors: ['CrowdStrike', 'SentinelOne'] },
         risk_insurance_challenges: [
-          { challenge: 'Federal contract creates specific cyber liability and compliance requirements', trigger_event: '$15M DoD contract won in Dec 2024', urgency: 'High', relevant_service: 'Cyber Risk & Government Compliance', service_provider: 'Aon', conversation_opener: 'Federal contracts come with CMMC and FedRAMP requirements — have you reviewed your cyber insurance coverage to match these new obligations?' },
+          { challenge: 'Federal contract creates specific cyber liability and compliance requirements', trigger_event: '$15M DoD contract won in Dec 2024', urgency: 'High', relevant_service: 'Cyber Risk & Government Compliance', service_provider: '', conversation_opener: 'Federal contracts come with CMMC and FedRAMP requirements — have you reviewed your cyber insurance coverage to match these new obligations?' },
         ],
         hr_workforce_challenges: [
-          { challenge: 'Security clearance requirements limit talent pool for federal work', trigger_event: 'Multi-year DoD contract', urgency: 'Medium', relevant_service: 'Workforce Planning & Security Talent', service_provider: 'Mercer', conversation_opener: 'Cleared security professionals are in high demand — how are you structuring compensation to attract and retain this specialized talent?' },
+          { challenge: 'Security clearance requirements limit talent pool for federal work', trigger_event: 'Multi-year DoD contract', urgency: 'Medium', relevant_service: 'Workforce Planning & Security Talent', service_provider: '', conversation_opener: 'Cleared security professionals are in high demand — how are you structuring compensation to attract and retain this specialized talent?' },
         ],
         key_sales_nuggets: [
-          { nugget: '$15M DoD contract signals shift from commercial to federal — compliance needs will multiply', category: 'Contract Win', source: 'Press Release Dec 2024', talking_point: 'Federal work requires a different risk profile than commercial cybersecurity. This transition creates immediate consulting opportunities.' },
+          { nugget: '$15M DoD contract signals shift from commercial to federal — compliance needs will multiply', category: 'Contract Win', source: 'Press Release Dec 2024', talking_point: 'Federal work requires a different risk profile than commercial cybersecurity. This transition creates immediate needs for specialized risk advisory and compliance services.' },
         ],
       },
     ],
@@ -1054,7 +1053,7 @@ function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
       <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiLayers className="w-3.5 h-3.5" /> Agents</h3>
       <div className="space-y-1.5">
         {agents.map(a => {
-          const isActive = activeAgentId === a.id || (a.id === AGENT_CONFIG.enrichment.id && activeAgentId === AGENT_CONFIG.enrichment.secondaryId)
+          const isActive = activeAgentId === a.id
           const Icon = a.icon
           return (
             <div key={a.id} className={`flex items-start gap-2 p-1.5 rounded-md text-xs transition-all ${isActive ? 'bg-primary/10' : ''}`}>
@@ -1745,7 +1744,6 @@ function EnrichmentDetailPanel({ ec }: { ec: EnrichedCompany }) {
                     <p className="text-[11px] text-muted-foreground mt-1"><span className="font-medium">Trigger:</span> {rc.trigger_event}</p>
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                       <InlineBadge variant="default">{rc.relevant_service}</InlineBadge>
-                      <span className="text-[10px] text-muted-foreground">{rc.service_provider}</span>
                     </div>
                     {rc.conversation_opener && (
                       <p className="text-[11px] text-primary mt-1.5 bg-primary/5 rounded px-2 py-1 leading-relaxed"><strong>Opener:</strong> {rc.conversation_opener}</p>
@@ -1770,7 +1768,6 @@ function EnrichmentDetailPanel({ ec }: { ec: EnrichedCompany }) {
                     <p className="text-[11px] text-muted-foreground mt-1"><span className="font-medium">Trigger:</span> {hc.trigger_event}</p>
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                       <InlineBadge variant="success">{hc.relevant_service}</InlineBadge>
-                      <span className="text-[10px] text-muted-foreground">{hc.service_provider}</span>
                     </div>
                     {hc.conversation_opener && (
                       <p className="text-[11px] text-primary mt-1.5 bg-primary/5 rounded px-2 py-1 leading-relaxed"><strong>Opener:</strong> {hc.conversation_opener}</p>
@@ -1855,7 +1852,7 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
             <div className="flex-1">
               <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.enrichmentSummary)}</div>
               {campaign.enrichmentTime != null && (
-                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1"><FiClock className="w-3 h-3" /> Enrichment completed in {(campaign.enrichmentTime / 1000).toFixed(1)}s (dual-model consolidation)</p>
+                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1"><FiClock className="w-3 h-3" /> Enrichment completed in {(campaign.enrichmentTime / 1000).toFixed(1)}s (multi-agent pipeline)</p>
               )}
             </div>
           </div>
@@ -1907,8 +1904,8 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {(enrichmentProgress.inFlight?.length ?? 0) > 1
-                  ? `${enrichmentProgress.inFlight!.length} companies researching in parallel with dual models. Results are consolidated into a single truth per company.`
-                  : 'Each company is researched with dual models for revenue, news, leadership, growth signals, competitive intel, risk/insurance challenges, HR challenges, and sales nuggets. Results are consolidated into a single truth.'}
+                  ? `${enrichmentProgress.inFlight!.length} companies researching in parallel. Each company is analyzed by 4 specialized sub-agents (financials, news, competitive, risk & workforce) and validated by a sales leader.`
+                  : 'Each company is analyzed by 4 specialized sub-agents for revenue, news, leadership, growth signals, competitive intel, risk & insurance challenges, HR challenges, and sales nuggets. Results are validated through a sales leader lens.'}
               </p>
             </div>
           )}
@@ -1925,7 +1922,7 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
         <div className="text-center py-16 bg-card rounded-lg border border-border/30">
           <FiDatabase className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">No enrichment data yet</h3>
-          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich. Both enrichment models run in parallel and results are consolidated into a single comprehensive profile per company.</p>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich. Each company is analyzed by 4 specialized research agents and validated through a sales leader lens.</p>
         </div>
       )}
 
@@ -2528,60 +2525,7 @@ ${truncatedFindings}`
       : []
   }
 
-  // ─ Consolidate two enrichment results into a single truth ─
-  const consolidateEnrichment = useCallback((primary: EnrichedCompany | null, secondary: EnrichedCompany | null): EnrichedCompany | null => {
-    if (!primary && !secondary) return null
-    if (!primary) return secondary
-    if (!secondary) return primary
-
-    // Helper: deduplicate arrays by a key field
-    const dedupeBy = <T extends Record<string, any>>(arr: T[], key: keyof T): T[] => {
-      const seen = new Set<string>()
-      return arr.filter(item => {
-        const val = String(item[key] ?? '').toLowerCase().trim()
-        if (!val || seen.has(val)) return false
-        seen.add(val)
-        return true
-      })
-    }
-
-    // Helper: merge string arrays and deduplicate
-    const mergeStringArrays = (...arrays: (string[] | undefined)[]): string[] => {
-      const combined = arrays.flat().filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
-      return Array.from(new Set(combined.map(s => s.trim())))
-    }
-
-    // Revenue: prefer whichever has a non-N/A figure, prefer more recent year
-    const pickRevenue = (): Revenue => {
-      const pFig = primary.revenue?.figure ?? 'N/A'
-      const sFig = secondary.revenue?.figure ?? 'N/A'
-      if (pFig === 'N/A' && sFig !== 'N/A') return secondary.revenue
-      if (sFig === 'N/A' && pFig !== 'N/A') return primary.revenue
-      // Both have figures — prefer more recent year
-      const pYear = parseInt(primary.revenue?.year ?? '0')
-      const sYear = parseInt(secondary.revenue?.year ?? '0')
-      return sYear > pYear ? secondary.revenue : primary.revenue
-    }
-
-    return {
-      company_name: primary.company_name,
-      revenue: pickRevenue(),
-      recent_news: dedupeBy([...primary.recent_news, ...secondary.recent_news], 'headline').slice(0, 10),
-      csuite_changes: dedupeBy([...primary.csuite_changes, ...secondary.csuite_changes], 'name'),
-      growth_indicators: dedupeBy([...primary.growth_indicators, ...secondary.growth_indicators], 'detail'),
-      competitive_intel: {
-        vendors: mergeStringArrays(primary.competitive_intel?.vendors, secondary.competitive_intel?.vendors),
-        partners: mergeStringArrays(primary.competitive_intel?.partners, secondary.competitive_intel?.partners),
-        competitors: mergeStringArrays(primary.competitive_intel?.competitors, secondary.competitive_intel?.competitors),
-      },
-      risk_insurance_challenges: dedupeBy([...primary.risk_insurance_challenges, ...secondary.risk_insurance_challenges], 'challenge'),
-      hr_workforce_challenges: dedupeBy([...primary.hr_workforce_challenges, ...secondary.hr_workforce_challenges], 'challenge'),
-      key_sales_nuggets: dedupeBy([...primary.key_sales_nuggets, ...secondary.key_sales_nuggets], 'nugget'),
-      selected: true,
-    }
-  }, [])
-
-  // Build focused, contextual enrichment prompt using campaign directive + company specifics
+  // Build enrichment prompt for the Enrichment Manager (which delegates to 4 specialized sub-agents)
   const buildEnrichmentPrompt = useCallback((company: Company, campaign: Campaign): string => {
     const name = company.name
     const industry = company.industry || 'technology'
@@ -2589,130 +2533,27 @@ ${truncatedFindings}`
     const size = company.estimated_size || ''
     const website = company.website || ''
     const segment = company.source_segment || ''
-    const year = new Date().getFullYear()
 
-    // Extract key business context from the campaign directive
     const directive = campaign.directive || ''
     const geography = campaign.filters?.geography || ''
     const targetIndustries = campaign.filters?.industries?.join(', ') || industry
-
-    // Build industry-specific terms for narrow searches
-    const industryTerms = industry.toLowerCase()
-    const isInfra = /data center|cloud|infrastructure|colocation|hosting/i.test(industryTerms)
-    const isSaaS = /saas|software|platform/i.test(industryTerms)
-    const isCyber = /cyber|security|endpoint|threat/i.test(industryTerms)
-    const isFintech = /fintech|financial|banking|payments/i.test(industryTerms)
-    const isHealthtech = /health|medical|pharma|biotech/i.test(industryTerms)
-
-    // Industry-specific revenue search terms
-    const revenueTerms = isInfra
-      ? `"${name} revenue colocation", "${name} data center revenue ${year}", "${name} annual report ${year}", "${name} EBITDA"`
-      : isSaaS
-      ? `"${name} ARR ${year}", "${name} SaaS revenue", "${name} annual recurring revenue", "${name} Series funding valuation"`
-      : isCyber
-      ? `"${name} cybersecurity revenue", "${name} ARR ${year}", "${name} security market share"`
-      : isFintech
-      ? `"${name} fintech revenue", "${name} transaction volume", "${name} AUM assets under management"`
-      : `"${name} revenue ${year}", "${name} annual revenue", "${name} funding valuation"`
-
-    // Industry-specific news terms tied to the directive context
-    const newsContext = directive
-      ? directive.split(/[,.;]/).slice(0, 3).map(s => s.trim()).filter(s => s.length > 10).map(s => {
-          // Extract key noun phrases from directive segments
-          const words = s.split(' ').filter(w => w.length > 3 && !/^(with|that|from|have|been|their|this|these|those|which|where|about|into|more|also|very|such|each|some|most|than|then|when|what|them|they|will|would|could|should)$/i.test(w))
-          return words.slice(0, 4).join(' ')
-        }).filter(Boolean)
-      : []
-
-    const newsTerms = [
-      `"${name} ${industry} ${year}"`,
-      geography ? `"${name} ${geography} expansion ${year}"` : `"${name} expansion ${year}"`,
-      ...newsContext.slice(0, 2).map(ctx => `"${name} ${ctx}"`),
-      isInfra ? `"${name} data center construction ${year}", "${name} hyperscale capacity MW"` : '',
-      isSaaS ? `"${name} product launch ${year}", "${name} enterprise customers"` : '',
-      isCyber ? `"${name} security breach detection", "${name} threat intelligence ${year}"` : '',
-    ].filter(Boolean).join(', ')
-
-    // Industry-specific growth terms
-    const growthTerms = [
-      geography ? `"${name} expansion ${geography}"` : '',
-      `"${name} hiring ${industry} ${year}"`,
-      `"${name} new ${geography || 'market'} ${year}"`,
-      isInfra ? `"${name} new data center site", "${name} MW capacity expansion", "${name} land acquisition"` : '',
-      isSaaS ? `"${name} customer growth", "${name} new product feature", "${name} enterprise adoption"` : '',
-      isCyber ? `"${name} SOC expansion", "${name} new security capabilities"` : '',
-      `"${name} Series funding ${year}"`,
-      `"${name} job openings ${industry}"`,
-    ].filter(Boolean).join(', ')
-
-    // Industry-specific competitive terms
-    const competitorTerms = [
-      `"${name} vs" ${industry}`,
-      `"${name} competitors ${industry}"`,
-      `"${name} market share ${industry}"`,
-      isInfra ? `"${name} vs Equinix", "${name} vs Digital Realty", "${name} colocation competitors", "${name} cloud partners"` : '',
-      isSaaS ? `"${name} alternatives", "${name} vs" site:g2.com, "${name} technology stack"` : '',
-      isCyber ? `"${name} vs CrowdStrike", "${name} vs Palo Alto", "${name} security comparison"` : '',
-    ].filter(Boolean).join(', ')
 
     return `Deep-research "${name}" — a ${industry} company${location ? ` headquartered in ${location}` : ''}${size ? ` with approximately ${size} employees` : ''}.
 
 CAMPAIGN CONTEXT: ${directive || `Research ${industry} companies`}
 ${geography ? `TARGET GEOGRAPHY: ${geography}` : ''}
+${targetIndustries ? `TARGET INDUSTRIES: ${targetIndustries}` : ''}
 ${segment ? `DISCOVERY SEGMENT: ${segment}` : ''}
 ${website ? `COMPANY WEBSITE: ${website}` : ''}
 
-Execute these SPECIFIC search queries — do not use generic searches. Each query is crafted for "${name}" in the ${industry} sector:
+Delegate to ALL 4 of your research sub-agents with this company context. Each sub-agent should conduct deep, specific research on "${name}" in the ${industry} sector. After collecting all results, consolidate into a single enriched company profile.
 
-1. REVENUE & FINANCIALS
-   Search: ${revenueTerms}
-   Also check: "${name}" site:crunchbase.com, "${name}" site:pitchbook.com, "${name} investor relations"
-   For public companies: check latest 10-K, 10-Q filings. For private: look for funding round press releases with valuations.
-
-2. RECENT STRATEGIC DEVELOPMENTS (${year})
-   Search: ${newsTerms}
-   Focus on: strategic moves relevant to ${targetIndustries} — NOT generic company PR. Prioritize acquisitions, ${geography ? `${geography} expansion` : 'market expansion'}, major contract wins, regulatory changes, technology partnerships, and capacity/capability announcements.
-   Find 3-5 significant items with exact dates.
-
-3. EXECUTIVE & LEADERSHIP CHANGES
-   Search: "${name} CEO ${year}", "${name} appoints chief", "${name} new CTO", "${name} executive team ${year}", "${name} leadership changes"
-   ${isInfra ? `Also: "${name} VP operations", "${name} head of ${geography || 'APAC'}"` : ''}
-   ${isSaaS ? `Also: "${name} VP engineering", "${name} chief product officer"` : ''}
-   Look for appointments, departures, and board changes in the last 12 months.
-
-4. GROWTH & EXPANSION SIGNALS
-   Search: ${growthTerms}
-   ${isInfra ? `Key metrics: MW under construction, number of facilities, CapEx plans, land bank acquisitions, interconnection growth.` : ''}
-   ${isSaaS ? `Key metrics: customer count growth, NRR, new product launches, platform capabilities.` : ''}
-   Look for concrete numbers: headcount increase %, new office locations, CapEx commitments, job posting counts.
-
-5. COMPETITIVE & ECOSYSTEM INTELLIGENCE
-   Search: ${competitorTerms}
-   Map: (a) direct competitors in ${industry}${geography ? ` specifically in ${geography}` : ''}, (b) technology/infrastructure vendors they rely on, (c) channel/strategic partners, (d) any vendor ecosystem or marketplace participation.
-
-6. RISK & INSURANCE CHALLENGES
-   Search: "${name} insurance claim", "${name} regulatory compliance ${year}", "${name} cyber breach", "${name} ESG risk", "${name} litigation ${year}", "${name} property damage", "${name} supply chain disruption"
-   Identify challenges a risk consulting/insurance brokerage firm (like WTW, Aon, or Marsh & McLennan) could help with:
-   - Property & casualty risk (facility damage, natural disaster exposure, supply chain)
-   - Cyber risk (data breaches, ransomware, IT infrastructure vulnerabilities)
-   - Regulatory & compliance risk (new regulations, fines, industry-specific compliance)
-   - M&A due diligence risk (integration, cultural, financial)
-   - ESG & climate risk (emissions targets, climate adaptation, sustainability reporting)
-   - Directors & officers liability (governance issues, shareholder activism)
-   For each challenge found, identify the specific WTW/Aon/Marsh service that addresses it and suggest a conversation opener.
-
-7. HR & WORKFORCE CHALLENGES
-   Search: "${name} hiring ${year}", "${name} layoffs", "${name} return to office", "${name} employee benefits", "${name} DEI diversity", "${name} compensation ${year}", "${name} talent acquisition", "${name} union labor"
-   Identify challenges a HR/benefits consulting firm (like Mercer, WTW, or Aon) could help with:
-   - Talent acquisition & retention (hiring difficulties, turnover, skills gaps)
-   - Employee benefits & wellbeing (healthcare costs, mental health, flexible work)
-   - Compensation strategy (pay equity, executive compensation, total rewards)
-   - Workforce transformation (restructuring, RTO policies, hybrid work)
-   - DEI & culture (diversity goals, inclusion programs, culture change)
-   - Retirement & pension (plan design, funding, regulatory compliance)
-   For each challenge found, identify the specific Mercer/WTW/Aon service and suggest a conversation opener.
-
-Return structured JSON for this ONE company with specific, sourced data. No generic statements — include dollar amounts, dates, names, percentages, and MW/capacity figures where applicable.`
+IMPORTANT REMINDERS:
+- All data must be specific, sourced, and include dates/amounts where applicable
+- Do NOT include any specific consulting firm, brokerage, or service provider names in challenges or talking points
+- The service_provider field must be empty string "" for all risk and HR challenges
+- Focus challenges and talking points on the company's operating space and industry-specific issues
+- Remove any findings that are too generic or could apply to any company`
   }, [])
 
   // Call a single agent with retry logic for transient network failures
@@ -2731,61 +2572,49 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
     return { success: false, response: { status: 'error', result: {}, message: 'Retries exhausted' }, error: 'Retries exhausted' }
   }, [])
 
-  // Enrich a single company with both models in parallel, then consolidate
+  // Enrich a single company via the Enrichment Manager (which delegates to 4 specialized sub-agents)
   const enrichSingleCompany = useCallback(async (
     company: Company,
     campaign: Campaign,
-    onComplete: (name: string, consolidated: EnrichedCompany | null) => void
+    onComplete: (name: string, enriched: EnrichedCompany | null) => void
   ) => {
     const message = buildEnrichmentPrompt(company, campaign)
     const start = Date.now()
 
-    // Fire both models truly in parallel — no stagger needed with retry logic in place
-    const [primaryResult, secondaryResult] = await Promise.allSettled([
-      callWithRetry(message, ENRICHMENT_PRIMARY_ID),
-      callWithRetry(message, ENRICHMENT_SECONDARY_ID),
-    ])
+    const result = await callWithRetry(message, ENRICHMENT_MANAGER_ID)
     const elapsed = Date.now() - start
 
-    let primaryCompany: EnrichedCompany | null = null
-    let secondaryCompany: EnrichedCompany | null = null
+    let enrichedCompany: EnrichedCompany | null = null
 
-    if (primaryResult.status === 'fulfilled' && primaryResult.value.success) {
-      const parsed = parseAgentResult(primaryResult.value)
+    if (result.success) {
+      const parsed = parseAgentResult(result)
       if (parsed) {
         const enriched = parseEnrichmentResult(parsed)
-        primaryCompany = enriched[0] ?? null
+        enrichedCompany = enriched[0] ?? null
       }
     }
 
-    if (secondaryResult.status === 'fulfilled' && secondaryResult.value.success) {
-      const parsed = parseAgentResult(secondaryResult.value)
-      if (parsed) {
-        const enriched = parseEnrichmentResult(parsed)
-        secondaryCompany = enriched[0] ?? null
-      }
-    }
-
-    const consolidated = consolidateEnrichment(primaryCompany, secondaryCompany)
-    console.log(`[enrichSingleCompany] ${company.name}: Primary=${primaryCompany ? 'OK' : 'FAIL'}, Secondary=${secondaryCompany ? 'OK' : 'FAIL'}, Consolidated=${consolidated ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
-    onComplete(company.name, consolidated)
-    return { name: company.name, consolidated, elapsed }
-  }, [buildEnrichmentPrompt, consolidateEnrichment, callWithRetry])
+    console.log(`[enrichSingleCompany] ${company.name}: ${enrichedCompany ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
+    onComplete(company.name, enrichedCompany)
+    return { name: company.name, enriched: enrichedCompany, elapsed }
+  }, [buildEnrichmentPrompt, callWithRetry])
 
   const runEnrichment = useCallback(async (campaign: Campaign) => {
     const selected = (campaign.companies ?? []).filter(c => c.selected)
     if (selected.length === 0) return
     setLoading(true)
     setError(null)
-    setActiveAgentId(ENRICHMENT_PRIMARY_ID)
+    setActiveAgentId(ENRICHMENT_MANAGER_ID)
 
-    const consolidatedResults: EnrichedCompany[] = []
+    const enrichedResults: EnrichedCompany[] = []
     let totalTime = 0
 
     setEnrichmentProgress({ current: 0, total: selected.length, completed: [], inFlight: [] })
 
     try {
-      const CONCURRENCY = 4
+      // Each Enrichment Manager call delegates to 4 sub-agents internally,
+      // so we run 2 companies concurrently to avoid overwhelming the platform
+      const CONCURRENCY = 2
       const queue = [...selected]
       const active: Promise<any>[] = []
       let completedCount = 0
@@ -2793,9 +2622,9 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
 
       const processCompany = (company: Company) => {
         inFlightNames.push(company.name)
-        return enrichSingleCompany(company, campaign, (name, consolidated) => {
+        return enrichSingleCompany(company, campaign, (name, enriched) => {
           completedCount++
-          if (consolidated) consolidatedResults.push(consolidated)
+          if (enriched) enrichedResults.push(enriched)
           // Remove from in-flight
           const idx = inFlightNames.indexOf(name)
           if (idx >= 0) inFlightNames.splice(idx, 1)
@@ -2803,17 +2632,17 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
           setEnrichmentProgress({
             current: completedCount,
             total: selected.length,
-            completed: [...consolidatedResults.map(c => c.company_name)],
+            completed: [...enrichedResults.map(c => c.company_name)],
             inFlight: [...inFlightNames],
           })
 
-          setActiveAgentId(completedCount % 2 === 0 ? ENRICHMENT_PRIMARY_ID : ENRICHMENT_SECONDARY_ID)
+          setActiveAgentId(ENRICHMENT_MANAGER_ID)
 
           updateCampaign({
             ...campaign,
-            enrichedCompanies: [...consolidatedResults],
+            enrichedCompanies: [...enrichedResults],
             stage: 'enrichment',
-            enrichmentSummary: `Enriched ${consolidatedResults.length} of ${selected.length} companies via ${AGENT_CONFIG.enrichment.name}.`,
+            enrichmentSummary: `Enriched ${enrichedResults.length} of ${selected.length} companies via ${AGENT_CONFIG.enrichment.name}.`,
             enrichmentTime: totalTime,
             updatedAt: new Date().toISOString(),
           })
@@ -2835,7 +2664,7 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
         setEnrichmentProgress({
           current: completedCount,
           total: selected.length,
-          completed: [...consolidatedResults.map(c => c.company_name)],
+          completed: [...enrichedResults.map(c => c.company_name)],
           inFlight: [...inFlightNames],
         })
         if (active.length > 0) {
@@ -2843,20 +2672,20 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
         }
       }
 
-      if (consolidatedResults.length === 0) {
-        setError('Enrichment models failed to return results. Please try again.')
+      if (enrichedResults.length === 0) {
+        setError('Enrichment agents failed to return results. Please try again.')
       }
 
       updateCampaign({
         ...campaign,
-        enrichedCompanies: consolidatedResults,
+        enrichedCompanies: enrichedResults,
         stage: 'enrichment',
-        enrichmentSummary: `Enriched ${consolidatedResults.length} companies with revenue, news, leadership, growth signals, competitive intelligence, risk/insurance challenges, HR challenges, and sales nuggets via ${AGENT_CONFIG.enrichment.name}.`,
+        enrichmentSummary: `Enriched ${enrichedResults.length} companies with revenue, news, leadership, growth signals, competitive intelligence, risk & insurance challenges, HR challenges, and sales nuggets via ${AGENT_CONFIG.enrichment.name}.`,
         enrichmentTime: totalTime,
         updatedAt: new Date().toISOString(),
       })
 
-      console.log(`[runEnrichment] Complete: ${consolidatedResults.length} consolidated companies. Total time: ${(totalTime / 1000).toFixed(1)}s across ${selected.length} companies`)
+      console.log(`[runEnrichment] Complete: ${enrichedResults.length} enriched companies. Total time: ${(totalTime / 1000).toFixed(1)}s across ${selected.length} companies`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrichment failed. Please try again.')
     }

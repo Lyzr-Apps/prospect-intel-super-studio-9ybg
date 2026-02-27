@@ -51,24 +51,9 @@
       "is_sub_agent_of": "699fe64260c6ee660b2b0c26"
     },
     {
-      "agent_id": "699fb657119509164a42675b",
-      "agent_name": "Company Enrichment Agent (Primary)",
-      "node_id": "company_enrichment",
-      "provider": "google",
-      "model": "gemini-2.5-pro",
-      "agent_type": "json",
-      "has_tools": false,
-      "has_file_output": false,
-      "has_image_output": false,
-      "has_voice": false,
-      "enrichment_role": "primary",
-      "consolidated_with": "699fbeb5511be0527fc9339b",
-      "expanded_schema": ["risk_insurance_challenges", "hr_workforce_challenges", "key_sales_nuggets"]
-    },
-    {
-      "agent_id": "699fbeb5511be0527fc9339b",
-      "agent_name": "Company Enrichment Agent (Secondary)",
-      "node_id": "company_enrichment_secondary",
+      "agent_id": "69a11c7c65fa13d86075de84",
+      "agent_name": "Enrichment Manager Agent",
+      "node_id": "enrichment_manager",
       "provider": "openai",
       "model": "gpt-4.1",
       "agent_type": "json",
@@ -76,9 +61,82 @@
       "has_file_output": false,
       "has_image_output": false,
       "has_voice": false,
-      "enrichment_role": "secondary",
-      "consolidated_with": "699fb657119509164a42675b",
-      "expanded_schema": ["risk_insurance_challenges", "hr_workforce_challenges", "key_sales_nuggets"]
+      "managed_agents": [
+        {
+          "agent_id": "69a11c116100943878a78a4e",
+          "agent_name": "Financial & Growth Researcher"
+        },
+        {
+          "agent_id": "69a11c229195d30dcfc08fbb",
+          "agent_name": "News & Leadership Researcher"
+        },
+        {
+          "agent_id": "69a11c329195d30dcfc08fbd",
+          "agent_name": "Competitive & Market Intel Researcher"
+        },
+        {
+          "agent_id": "69a11c4fd3d2bd59cbfef2dc",
+          "agent_name": "Risk & Workforce Analyst"
+        }
+      ],
+      "sales_leader_validation": true,
+      "replaces": ["699fb657119509164a42675b", "699fbeb5511be0527fc9339b"]
+    },
+    {
+      "agent_id": "69a11c116100943878a78a4e",
+      "agent_name": "Financial & Growth Researcher",
+      "node_id": "financial_growth_researcher",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false,
+      "is_sub_agent_of": "69a11c7c65fa13d86075de84",
+      "workstream": "Revenue figures, funding rounds, growth indicators"
+    },
+    {
+      "agent_id": "69a11c229195d30dcfc08fbb",
+      "agent_name": "News & Leadership Researcher",
+      "node_id": "news_leadership_researcher",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false,
+      "is_sub_agent_of": "69a11c7c65fa13d86075de84",
+      "workstream": "Recent news, press releases, C-suite changes"
+    },
+    {
+      "agent_id": "69a11c329195d30dcfc08fbd",
+      "agent_name": "Competitive & Market Intel Researcher",
+      "node_id": "competitive_market_researcher",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false,
+      "is_sub_agent_of": "69a11c7c65fa13d86075de84",
+      "workstream": "Vendors, partners, competitors"
+    },
+    {
+      "agent_id": "69a11c4fd3d2bd59cbfef2dc",
+      "agent_name": "Risk & Workforce Analyst",
+      "node_id": "risk_workforce_analyst",
+      "provider": "google",
+      "model": "gemini-2.5-pro",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false,
+      "is_sub_agent_of": "69a11c7c65fa13d86075de84",
+      "workstream": "Risk/insurance challenges, HR/workforce challenges, key sales nuggets"
     },
     {
       "agent_id": "699fb67d511be0527fc9338e",
@@ -101,9 +159,9 @@
     }
   ],
   "workflow_structure": {
-    "pattern": "manager-subagents + sequential",
-    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> company_enrichment + company_enrichment_secondary (parallel, consolidated) -> contact_finder -> output_node",
+    "pattern": "dual manager-subagent + sequential",
+    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> enrichment_manager <-> [financial_growth_researcher, news_leadership_researcher, competitive_market_researcher, risk_workforce_analyst] -> contact_finder -> output_node",
     "discovery_pipeline": "Manager segments directive -> Researcher searches web -> Extractor pulls company names from findings -> Manager deduplicates and consolidates",
-    "enrichment_pipeline": "Both enrichment agents run in parallel per company -> Results consolidated client-side (deduplicated news, merged competitive intel, combined sales intelligence) -> Single truth per company"
+    "enrichment_pipeline": "Enrichment Manager delegates to 4 specialized sub-agents in parallel -> Financial & Growth + News & Leadership + Competitive & Market + Risk & Workforce -> Manager consolidates with sales leader validation -> Single enriched company profile per company"
   }
 }
