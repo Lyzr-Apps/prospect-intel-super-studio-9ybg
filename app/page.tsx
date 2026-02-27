@@ -21,6 +21,12 @@ const COMPANY_EXTRACTOR_ID = '699fe5da10134bfe58ea5f4f'
 const ENRICHMENT_MANAGER_ID = '69a11c7c65fa13d86075de84'
 const CONTACT_AGENT_ID = '699fb67d511be0527fc9338e'
 
+// Enrichment sub-agent IDs (called directly in parallel for speed)
+const FINANCIAL_GROWTH_AGENT_ID = '69a11c116100943878a78a4e'
+const NEWS_LEADERSHIP_AGENT_ID = '69a11c229195d30dcfc08fbb'
+const COMPETITIVE_INTEL_AGENT_ID = '69a11c329195d30dcfc08fbd'
+const RISK_WORKFORCE_AGENT_ID = '69a11c4fd3d2bd59cbfef2dc'
+
 // ─── AGENT CONFIG (agent-agnostic labels) ────────────────────────────────────
 const AGENT_CONFIG = {
   discoveryManager: { id: DISCOVERY_MANAGER_ID, name: 'Discovery Manager', desc: 'Orchestrates multi-agent discovery pipeline' },
@@ -217,7 +223,7 @@ type AppView = 'dashboard' | 'campaign'
 type SidebarFilter = 'all' | 'in_progress' | 'completed'
 
 // ─── HELPER: parse agent result robustly ─────────────────────────────────────
-const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings']
+const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'revenue', 'growth_indicators', 'recent_news', 'csuite_changes', 'competitive_intel', 'risk_insurance_challenges', 'hr_workforce_challenges', 'key_sales_nuggets']
 
 function hasTargetKeys(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false
@@ -1043,17 +1049,18 @@ function InlineBadge({ children, variant = 'default' }: { children: React.ReactN
 
 // ─── AGENT STATUS ────────────────────────────────────────────────────────────
 function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
+  const ENRICHMENT_SUB_IDS = [FINANCIAL_GROWTH_AGENT_ID, NEWS_LEADERSHIP_AGENT_ID, COMPETITIVE_INTEL_AGENT_ID, RISK_WORKFORCE_AGENT_ID]
   const agents = [
-    { id: AGENT_CONFIG.discoveryManager.id, name: AGENT_CONFIG.discoveryManager.name, desc: AGENT_CONFIG.discoveryManager.desc, icon: FiTarget },
-    { id: AGENT_CONFIG.enrichment.id, name: AGENT_CONFIG.enrichment.name, desc: AGENT_CONFIG.enrichment.desc, icon: FiDatabase },
-    { id: AGENT_CONFIG.contactFinder.id, name: AGENT_CONFIG.contactFinder.name, desc: AGENT_CONFIG.contactFinder.desc, icon: FiUsers },
+    { id: AGENT_CONFIG.discoveryManager.id, name: AGENT_CONFIG.discoveryManager.name, desc: AGENT_CONFIG.discoveryManager.desc, icon: FiTarget, matchIds: [AGENT_CONFIG.discoveryManager.id] },
+    { id: AGENT_CONFIG.enrichment.id, name: AGENT_CONFIG.enrichment.name, desc: '4 parallel research agents per company', icon: FiDatabase, matchIds: [AGENT_CONFIG.enrichment.id, ...ENRICHMENT_SUB_IDS] },
+    { id: AGENT_CONFIG.contactFinder.id, name: AGENT_CONFIG.contactFinder.name, desc: AGENT_CONFIG.contactFinder.desc, icon: FiUsers, matchIds: [AGENT_CONFIG.contactFinder.id] },
   ]
   return (
     <div className="rounded-lg p-4 mt-auto border-t" style={{ borderColor: 'hsl(35 20% 85%)' }}>
       <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiLayers className="w-3.5 h-3.5" /> Agents</h3>
       <div className="space-y-1.5">
         {agents.map(a => {
-          const isActive = activeAgentId === a.id
+          const isActive = activeAgentId ? a.matchIds.includes(activeAgentId) : false
           const Icon = a.icon
           return (
             <div key={a.id} className={`flex items-start gap-2 p-1.5 rounded-md text-xs transition-all ${isActive ? 'bg-primary/10' : ''}`}>
@@ -1904,8 +1911,8 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {(enrichmentProgress.inFlight?.length ?? 0) > 1
-                  ? `${enrichmentProgress.inFlight!.length} companies researching in parallel. Each company is analyzed by 4 specialized sub-agents (financials, news, competitive, risk & workforce) and validated by a sales leader.`
-                  : 'Each company is analyzed by 4 specialized sub-agents for revenue, news, leadership, growth signals, competitive intel, risk & insurance challenges, HR challenges, and sales nuggets. Results are validated through a sales leader lens.'}
+                  ? `${enrichmentProgress.inFlight!.length} companies researching in parallel. Each company fires 4 specialized agents simultaneously (financials, news, competitive, risk & workforce) for maximum speed.`
+                  : 'Each company is researched by 4 specialized agents running in parallel — financials & growth, news & leadership, competitive intel, and risk & workforce — then merged into a single enriched profile.'}
               </p>
             </div>
           )}
@@ -2525,36 +2532,95 @@ ${truncatedFindings}`
       : []
   }
 
-  // Build enrichment prompt for the Enrichment Manager (which delegates to 4 specialized sub-agents)
-  const buildEnrichmentPrompt = useCallback((company: Company, campaign: Campaign): string => {
+  // Build company context string shared across all sub-agent prompts
+  const buildCompanyContext = useCallback((company: Company, campaign: Campaign): string => {
     const name = company.name
     const industry = company.industry || 'technology'
     const location = company.hq_location || ''
     const size = company.estimated_size || ''
     const website = company.website || ''
     const segment = company.source_segment || ''
-
     const directive = campaign.directive || ''
     const geography = campaign.filters?.geography || ''
     const targetIndustries = campaign.filters?.industries?.join(', ') || industry
 
-    return `Deep-research "${name}" — a ${industry} company${location ? ` headquartered in ${location}` : ''}${size ? ` with approximately ${size} employees` : ''}.
-
+    return `Company: "${name}" — a ${industry} company${location ? ` headquartered in ${location}` : ''}${size ? ` with approximately ${size} employees` : ''}.
 CAMPAIGN CONTEXT: ${directive || `Research ${industry} companies`}
 ${geography ? `TARGET GEOGRAPHY: ${geography}` : ''}
 ${targetIndustries ? `TARGET INDUSTRIES: ${targetIndustries}` : ''}
 ${segment ? `DISCOVERY SEGMENT: ${segment}` : ''}
-${website ? `COMPANY WEBSITE: ${website}` : ''}
-
-Delegate to ALL 4 of your research sub-agents with this company context. Each sub-agent should conduct deep, specific research on "${name}" in the ${industry} sector. After collecting all results, consolidate into a single enriched company profile.
-
-IMPORTANT REMINDERS:
-- All data must be specific, sourced, and include dates/amounts where applicable
-- Do NOT include any specific consulting firm, brokerage, or service provider names in challenges or talking points
-- The service_provider field must be empty string "" for all risk and HR challenges
-- Focus challenges and talking points on the company's operating space and industry-specific issues
-- Remove any findings that are too generic or could apply to any company`
+${website ? `COMPANY WEBSITE: ${website}` : ''}`
   }, [])
+
+  // 4 specialized prompts — one per sub-agent workstream
+  const buildFinancialGrowthPrompt = useCallback((company: Company, campaign: Campaign): string => {
+    return `${buildCompanyContext(company, campaign)}
+
+Research FINANCIAL & GROWTH data for "${company.name}":
+1. Revenue figures — annual revenue, ARR, or estimated revenue with year and source
+2. Funding rounds — recent investments, Series rounds, valuations
+3. Growth indicators — hiring surges, office expansions, new product launches, market expansion signals
+
+Return a JSON object with these fields:
+- "company_name": string
+- "revenue": { "figure": string, "year": string, "source": string }
+- "growth_indicators": [{ "type": string, "detail": string, "implications": string }]
+
+All data must be specific, sourced, and include dates/amounts where applicable. Do NOT include generic findings.`
+  }, [buildCompanyContext])
+
+  const buildNewsLeadershipPrompt = useCallback((company: Company, campaign: Campaign): string => {
+    return `${buildCompanyContext(company, campaign)}
+
+Research NEWS & LEADERSHIP data for "${company.name}":
+1. Recent news — press releases, product launches, partnerships, acquisitions from the last 12 months
+2. C-suite changes — new hires, departures, role changes at VP level and above
+3. For each news item, assess its relevance for sales outreach
+
+Return a JSON object with these fields:
+- "company_name": string
+- "recent_news": [{ "date": string, "headline": string, "summary": string, "sales_relevance": string }]
+- "csuite_changes": [{ "name": string, "new_role": string, "previous_role": string, "date": string }]
+
+All data must be specific, sourced, and include dates where applicable.`
+  }, [buildCompanyContext])
+
+  const buildCompetitiveIntelPrompt = useCallback((company: Company, campaign: Campaign): string => {
+    return `${buildCompanyContext(company, campaign)}
+
+Research COMPETITIVE & MARKET INTELLIGENCE for "${company.name}":
+1. Technology vendors — what major platforms, tools, or services does this company use?
+2. Strategic partners — consulting firms, system integrators, channel partners
+3. Direct competitors — companies competing in the same market segments
+
+Return a JSON object with these fields:
+- "company_name": string
+- "competitive_intel": { "vendors": [string], "partners": [string], "competitors": [string] }
+
+All data must be specific and sourced. Do NOT include generic industry competitors — only verified competitive relationships.`
+  }, [buildCompanyContext])
+
+  const buildRiskWorkforcePrompt = useCallback((company: Company, campaign: Campaign): string => {
+    return `${buildCompanyContext(company, campaign)}
+
+Research RISK, INSURANCE, HR & WORKFORCE challenges for "${company.name}", plus synthesize KEY SALES NUGGETS:
+
+1. Risk & Insurance Challenges — regulatory risks, compliance gaps, cyber exposure, D&O liability, international expansion risks. Each challenge should have a specific trigger event from real company activity.
+2. HR & Workforce Challenges — talent acquisition difficulties, retention issues, benefits gaps, compensation pressures, workforce planning needs. Each should tie to real company activity.
+3. Key Sales Nuggets — the most compelling conversation starters combining financial, news, leadership, and competitive data into actionable sales talking points.
+
+Return a JSON object with these fields:
+- "company_name": string
+- "risk_insurance_challenges": [{ "challenge": string, "trigger_event": string, "urgency": "High"|"Medium"|"Low", "relevant_service": string, "service_provider": "", "conversation_opener": string }]
+- "hr_workforce_challenges": [{ "challenge": string, "trigger_event": string, "urgency": "High"|"Medium"|"Low", "relevant_service": string, "service_provider": "", "conversation_opener": string }]
+- "key_sales_nuggets": [{ "nugget": string, "category": string, "source": string, "talking_point": string }]
+
+IMPORTANT:
+- The service_provider field MUST be empty string "" for ALL challenges
+- Do NOT include any specific consulting firm, brokerage, or service provider names
+- Focus on the company's operating space and industry-specific issues
+- All data must be specific, sourced, and tied to real events`
+  }, [buildCompanyContext])
 
   // Call a single agent with retry logic for transient network failures
   const callWithRetry = useCallback(async (message: string, agentId: string, retries = 2): Promise<AIAgentResponse> => {
@@ -2572,39 +2638,95 @@ IMPORTANT REMINDERS:
     return { success: false, response: { status: 'error', result: {}, message: 'Retries exhausted' }, error: 'Retries exhausted' }
   }, [])
 
-  // Enrich a single company via the Enrichment Manager (which delegates to 4 specialized sub-agents)
+  // Enrich a single company by calling 4 specialized sub-agents in parallel, then merging results client-side
   const enrichSingleCompany = useCallback(async (
     company: Company,
     campaign: Campaign,
     onComplete: (name: string, enriched: EnrichedCompany | null) => void
   ) => {
-    const message = buildEnrichmentPrompt(company, campaign)
     const start = Date.now()
 
-    const result = await callWithRetry(message, ENRICHMENT_MANAGER_ID)
+    // Build 4 specialized prompts
+    const financialPrompt = buildFinancialGrowthPrompt(company, campaign)
+    const newsPrompt = buildNewsLeadershipPrompt(company, campaign)
+    const competitivePrompt = buildCompetitiveIntelPrompt(company, campaign)
+    const riskPrompt = buildRiskWorkforcePrompt(company, campaign)
+
+    // Fire all 4 sub-agents in parallel
+    const [financialRes, newsRes, competitiveRes, riskRes] = await Promise.allSettled([
+      callWithRetry(financialPrompt, FINANCIAL_GROWTH_AGENT_ID),
+      callWithRetry(newsPrompt, NEWS_LEADERSHIP_AGENT_ID),
+      callWithRetry(competitivePrompt, COMPETITIVE_INTEL_AGENT_ID),
+      callWithRetry(riskPrompt, RISK_WORKFORCE_AGENT_ID),
+    ])
+
     const elapsed = Date.now() - start
 
-    let enrichedCompany: EnrichedCompany | null = null
-
-    if (result.success) {
-      const parsed = parseAgentResult(result)
-      if (parsed) {
-        const enriched = parseEnrichmentResult(parsed)
-        enrichedCompany = enriched[0] ?? null
-      }
+    // Extract parsed data from each sub-agent result
+    const extractParsed = (settled: PromiseSettledResult<AIAgentResponse>): any => {
+      if (settled.status === 'rejected') return null
+      if (!settled.value?.success) return null
+      return parseAgentResult(settled.value)
     }
 
-    console.log(`[enrichSingleCompany] ${company.name}: ${enrichedCompany ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
+    const financialData = extractParsed(financialRes)
+    const newsData = extractParsed(newsRes)
+    const competitiveData = extractParsed(competitiveRes)
+    const riskData = extractParsed(riskRes)
+
+    const successCount = [financialData, newsData, competitiveData, riskData].filter(Boolean).length
+    console.log(`[enrichSingleCompany] ${company.name}: ${successCount}/4 sub-agents succeeded (${(elapsed / 1000).toFixed(1)}s)`)
+
+    // If no sub-agents returned data, mark as failed
+    if (successCount === 0) {
+      onComplete(company.name, null)
+      return { name: company.name, enriched: null, elapsed }
+    }
+
+    // Merge results from all 4 sub-agents into a single EnrichedCompany
+    const enrichedCompany: EnrichedCompany = {
+      company_name: company.name,
+      revenue: {
+        figure: financialData?.revenue?.figure ?? 'N/A',
+        year: financialData?.revenue?.year ?? '',
+        source: financialData?.revenue?.source ?? '',
+      },
+      growth_indicators: Array.isArray(financialData?.growth_indicators)
+        ? financialData.growth_indicators.map((gi: any) => ({ type: gi?.type ?? '', detail: gi?.detail ?? '', implications: gi?.implications ?? '' }))
+        : [],
+      recent_news: Array.isArray(newsData?.recent_news)
+        ? newsData.recent_news.map((n: any) => ({ date: n?.date ?? '', headline: n?.headline ?? '', summary: n?.summary ?? '', sales_relevance: n?.sales_relevance ?? '' }))
+        : [],
+      csuite_changes: Array.isArray(newsData?.csuite_changes)
+        ? newsData.csuite_changes.map((cs: any) => ({ name: cs?.name ?? '', new_role: cs?.new_role ?? '', previous_role: cs?.previous_role ?? '', date: cs?.date ?? '' }))
+        : [],
+      competitive_intel: {
+        vendors: Array.isArray(competitiveData?.competitive_intel?.vendors) ? competitiveData.competitive_intel.vendors : [],
+        partners: Array.isArray(competitiveData?.competitive_intel?.partners) ? competitiveData.competitive_intel.partners : [],
+        competitors: Array.isArray(competitiveData?.competitive_intel?.competitors) ? competitiveData.competitive_intel.competitors : [],
+      },
+      risk_insurance_challenges: Array.isArray(riskData?.risk_insurance_challenges)
+        ? riskData.risk_insurance_challenges.map((rc: any) => ({ challenge: rc?.challenge ?? '', trigger_event: rc?.trigger_event ?? '', urgency: rc?.urgency ?? '', relevant_service: rc?.relevant_service ?? '', service_provider: '', conversation_opener: rc?.conversation_opener ?? '' }))
+        : [],
+      hr_workforce_challenges: Array.isArray(riskData?.hr_workforce_challenges)
+        ? riskData.hr_workforce_challenges.map((hc: any) => ({ challenge: hc?.challenge ?? '', trigger_event: hc?.trigger_event ?? '', urgency: hc?.urgency ?? '', relevant_service: hc?.relevant_service ?? '', service_provider: '', conversation_opener: hc?.conversation_opener ?? '' }))
+        : [],
+      key_sales_nuggets: Array.isArray(riskData?.key_sales_nuggets)
+        ? riskData.key_sales_nuggets.map((sn: any) => ({ nugget: sn?.nugget ?? '', category: sn?.category ?? '', source: sn?.source ?? '', talking_point: sn?.talking_point ?? '' }))
+        : [],
+      selected: true,
+    }
+
     onComplete(company.name, enrichedCompany)
     return { name: company.name, enriched: enrichedCompany, elapsed }
-  }, [buildEnrichmentPrompt, callWithRetry])
+  }, [buildFinancialGrowthPrompt, buildNewsLeadershipPrompt, buildCompetitiveIntelPrompt, buildRiskWorkforcePrompt, callWithRetry])
 
   const runEnrichment = useCallback(async (campaign: Campaign) => {
     const selected = (campaign.companies ?? []).filter(c => c.selected)
     if (selected.length === 0) return
     setLoading(true)
     setError(null)
-    setActiveAgentId(ENRICHMENT_MANAGER_ID)
+    setActiveAgentId(FINANCIAL_GROWTH_AGENT_ID)
 
     const enrichedResults: EnrichedCompany[] = []
     let totalTime = 0
@@ -2612,9 +2734,9 @@ IMPORTANT REMINDERS:
     setEnrichmentProgress({ current: 0, total: selected.length, completed: [], inFlight: [] })
 
     try {
-      // Each Enrichment Manager call delegates to 4 sub-agents internally,
-      // so we run 2 companies concurrently to avoid overwhelming the platform
-      const CONCURRENCY = 2
+      // Each company calls 4 sub-agents directly in parallel (flat calls, not manager-chained),
+      // so we can run 4 companies concurrently for maximum throughput
+      const CONCURRENCY = 4
       const queue = [...selected]
       const active: Promise<any>[] = []
       let completedCount = 0
@@ -2636,7 +2758,7 @@ IMPORTANT REMINDERS:
             inFlight: [...inFlightNames],
           })
 
-          setActiveAgentId(ENRICHMENT_MANAGER_ID)
+          setActiveAgentId(FINANCIAL_GROWTH_AGENT_ID)
 
           updateCampaign({
             ...campaign,
@@ -2680,7 +2802,7 @@ IMPORTANT REMINDERS:
         ...campaign,
         enrichedCompanies: enrichedResults,
         stage: 'enrichment',
-        enrichmentSummary: `Enriched ${enrichedResults.length} companies with revenue, news, leadership, growth signals, competitive intelligence, risk & insurance challenges, HR challenges, and sales nuggets via ${AGENT_CONFIG.enrichment.name}.`,
+        enrichmentSummary: `Enriched ${enrichedResults.length} companies with revenue, news, leadership, growth signals, competitive intelligence, risk & insurance challenges, HR challenges, and sales nuggets via 4 parallel research agents.`,
         enrichmentTime: totalTime,
         updatedAt: new Date().toISOString(),
       })
