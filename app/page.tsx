@@ -2700,6 +2700,22 @@ Execute these SPECIFIC search queries — do not use generic searches. Each quer
 Return structured JSON for this ONE company with specific, sourced data. No generic statements — include dollar amounts, dates, names, percentages, and MW/capacity figures where applicable.`
   }, [])
 
+  // Call a single agent with retry logic for transient network failures
+  const callWithRetry = useCallback(async (message: string, agentId: string, retries = 2): Promise<AIAgentResponse> => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const result = await callAIAgent(message, agentId)
+      // If successful or a non-retryable error, return immediately
+      if (result.success) return result
+      const errMsg = (result.error || result.response?.message || '').toLowerCase()
+      const isTransient = errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('timed out') || errMsg.includes('no response') || errMsg.includes('connection')
+      if (!isTransient || attempt === retries) return result
+      // Wait before retry: 3s, then 6s
+      await new Promise(r => setTimeout(r, 3000 * (attempt + 1)))
+      console.log(`[callWithRetry] Retrying ${agentId} attempt ${attempt + 1}/${retries} after transient error: ${errMsg}`)
+    }
+    return { success: false, response: { status: 'error', result: {}, message: 'Retries exhausted' }, error: 'Retries exhausted' }
+  }, [])
+
   // Enrich a single company with both models in parallel, then consolidate
   const enrichSingleCompany = useCallback(async (
     company: Company,
@@ -2709,16 +2725,18 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
     const message = buildEnrichmentPrompt(company, campaign)
     const start = Date.now()
 
-    const [primaryResult, secondaryResult] = await Promise.allSettled([
-      callAIAgent(message, ENRICHMENT_PRIMARY_ID),
-      callAIAgent(message, ENRICHMENT_SECONDARY_ID),
-    ])
+    // Stagger the two model calls by 500ms to avoid connection pile-up
+    const primaryPromise = callWithRetry(message, ENRICHMENT_PRIMARY_ID)
+    await new Promise(r => setTimeout(r, 500))
+    const secondaryPromise = callWithRetry(message, ENRICHMENT_SECONDARY_ID)
+
+    const [primaryResult, secondaryResult] = await Promise.allSettled([primaryPromise, secondaryPromise])
     const elapsed = Date.now() - start
 
     let primaryCompany: EnrichedCompany | null = null
     let secondaryCompany: EnrichedCompany | null = null
 
-    if (primaryResult.status === 'fulfilled') {
+    if (primaryResult.status === 'fulfilled' && primaryResult.value.success) {
       const parsed = parseAgentResult(primaryResult.value)
       if (parsed) {
         const enriched = parseEnrichmentResult(parsed)
@@ -2726,7 +2744,7 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
       }
     }
 
-    if (secondaryResult.status === 'fulfilled') {
+    if (secondaryResult.status === 'fulfilled' && secondaryResult.value.success) {
       const parsed = parseAgentResult(secondaryResult.value)
       if (parsed) {
         const enriched = parseEnrichmentResult(parsed)
@@ -2738,7 +2756,7 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
     console.log(`[enrichSingleCompany] ${company.name}: Primary=${primaryCompany ? 'OK' : 'FAIL'}, Secondary=${secondaryCompany ? 'OK' : 'FAIL'}, Consolidated=${consolidated ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
     onComplete(company.name, consolidated)
     return { name: company.name, consolidated, elapsed }
-  }, [buildEnrichmentPrompt, consolidateEnrichment])
+  }, [buildEnrichmentPrompt, consolidateEnrichment, callWithRetry])
 
   const runEnrichment = useCallback(async (campaign: Campaign) => {
     const selected = (campaign.companies ?? []).filter(c => c.selected)
@@ -2753,7 +2771,7 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
     setEnrichmentProgress({ current: 0, total: selected.length, completed: [] })
 
     try {
-      const CONCURRENCY = 4
+      const CONCURRENCY = 2
       const queue = [...selected]
       const active: Promise<any>[] = []
       let completedCount = 0
@@ -2786,6 +2804,8 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
       while (queue.length > 0 || active.length > 0) {
         while (active.length < CONCURRENCY && queue.length > 0) {
           const company = queue.shift()!
+          // Stagger launches by 1s to avoid overwhelming browser connection pool
+          if (active.length > 0) await new Promise(r => setTimeout(r, 1000))
           const promise = processCompany(company).then(r => {
             results.push({ name: r.name, elapsed: r.elapsed })
             totalTime += r.elapsed

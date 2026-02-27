@@ -102,22 +102,29 @@ const fetchWrapper = async (...args) => {
     } // if backend is erroring out
     else if (response.status >= 500) {
       const requestUrl = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-      sendErrorToParent(
-        `Backend returned ${response.status} error for ${requestUrl}`,
-        response.status,
-        requestUrl,
-      );
+      // Don't broadcast agent API server errors to parent — callAIAgent handles 502/503/504 retries.
+      if (!requestUrl.includes("/api/agent")) {
+        sendErrorToParent(
+          `Backend returned ${response.status} error for ${requestUrl}`,
+          response.status,
+          requestUrl,
+        );
+      }
     }
 
     return response;
   } catch (error) {
     // network failures
     const requestUrl = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-    sendErrorToParent(
-      `Network error: Cannot connect to backend (${requestUrl})`,
-      undefined,
-      requestUrl,
-    );
+    // Don't broadcast agent API errors to parent — callAIAgent handles retries/recovery gracefully.
+    // Broadcasting causes misleading error popups during concurrent enrichment polling.
+    if (!requestUrl.includes("/api/agent")) {
+      sendErrorToParent(
+        `Network error: Cannot connect to backend (${requestUrl})`,
+        undefined,
+        requestUrl,
+      );
+    }
   }
 };
 
