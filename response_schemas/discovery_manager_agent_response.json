@@ -1,7 +1,7 @@
 {
   "agent_name": "Discovery Manager Agent",
   "agent_id": "699fe64260c6ee660b2b0c26",
-  "description": "Orchestrates large-scale company discovery using a two-step Research-then-Extract pipeline. Segments business directives into focused search strategies, delegates web research to the Discovery Researcher (Sonar Pro), then passes raw findings to the Company Name Extractor (GPT-4.1) to identify every company mentioned. Handles deduplication, quality scoring, and result consolidation.",
+  "description": "Orchestrates large-scale company discovery using a two-step Research-then-Extract pipeline. Segments business directives into focused search strategies, delegates web research to the Discovery Researcher, then passes raw findings to the Company Name Extractor to identify every company mentioned. Handles deduplication, quality scoring, and result consolidation.",
   "agent_type": "json",
   "accessor": "result",
   "auto_generated": true,

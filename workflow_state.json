@@ -28,8 +28,8 @@
       "agent_id": "699fbc147aab67831bf8b7a7",
       "agent_name": "Discovery Researcher Agent",
       "node_id": "discovery_researcher",
-      "provider": "perplexity",
-      "model": "sonar-pro",
+      "provider": "openai",
+      "model": "gpt-4.1",
       "agent_type": "json",
       "has_tools": false,
       "has_file_output": false,
@@ -64,10 +64,10 @@
     },
     {
       "agent_id": "699fbeb5511be0527fc9339b",
-      "agent_name": "Company Enrichment Agent (Sonar Pro)",
-      "node_id": "company_enrichment_sonar",
-      "provider": "perplexity",
-      "model": "sonar-pro",
+      "agent_name": "Company Enrichment Agent (Secondary)",
+      "node_id": "company_enrichment_secondary",
+      "provider": "openai",
+      "model": "gpt-4.1",
       "agent_type": "json",
       "has_tools": false,
       "has_file_output": false,
@@ -97,7 +97,7 @@
   ],
   "workflow_structure": {
     "pattern": "manager-subagents + sequential",
-    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> company_enrichment / company_enrichment_sonar -> contact_finder -> output_node",
+    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> company_enrichment / company_enrichment_secondary -> contact_finder -> output_node",
     "discovery_pipeline": "Manager segments directive -> Researcher searches web -> Extractor pulls company names from findings -> Manager deduplicates and consolidates"
   }
 }

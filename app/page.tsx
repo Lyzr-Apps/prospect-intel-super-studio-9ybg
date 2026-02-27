@@ -18,9 +18,19 @@ import { HiOutlineSparkles, HiOutlineBuildingOffice2 } from 'react-icons/hi2'
 const DISCOVERY_MANAGER_ID = '699fe64260c6ee660b2b0c26'
 const DISCOVERY_RESEARCHER_ID = '699fbc147aab67831bf8b7a7'
 const COMPANY_EXTRACTOR_ID = '699fe5da10134bfe58ea5f4f'
-const ENRICHMENT_GEMINI_ID = '699fb657119509164a42675b'
-const ENRICHMENT_SONAR_ID = '699fbeb5511be0527fc9339b'
+const ENRICHMENT_PRIMARY_ID = '699fb657119509164a42675b'
+const ENRICHMENT_SECONDARY_ID = '699fbeb5511be0527fc9339b'
 const CONTACT_AGENT_ID = '699fb67d511be0527fc9338e'
+
+// ─── AGENT CONFIG (agent-agnostic labels) ────────────────────────────────────
+const AGENT_CONFIG = {
+  discoveryManager: { id: DISCOVERY_MANAGER_ID, name: 'Discovery Manager', desc: 'Orchestrates multi-agent discovery pipeline' },
+  discoveryResearcher: { id: DISCOVERY_RESEARCHER_ID, name: 'Discovery Researcher', desc: 'Web research across news, reports & directories' },
+  companyExtractor: { id: COMPANY_EXTRACTOR_ID, name: 'Company Extractor', desc: 'Extracts and structures company data from findings' },
+  enrichmentPrimary: { id: ENRICHMENT_PRIMARY_ID, name: 'Enrichment (Primary)', desc: 'Deep company research with search grounding' },
+  enrichmentSecondary: { id: ENRICHMENT_SECONDARY_ID, name: 'Enrichment (Secondary)', desc: 'Parallel enrichment for A/B comparison' },
+  contactFinder: { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'Verified contacts via Apollo integration' },
+}
 
 // ─── THEME ───────────────────────────────────────────────────────────────────
 const THEME_VARS: React.CSSProperties & Record<string, string> = {
@@ -168,13 +178,13 @@ interface Campaign {
   priority_flags: string[]
   searchSummary?: string
   enrichmentSummary?: string
-  enrichmentSummarySonar?: string
+  enrichmentSummarySecondary?: string
   contactSummary?: string
   totalContactsFound?: number
   segmentationStrategy?: SegmentStrategy[]
   duplicatesRemoved?: number
-  enrichedCompaniesSonar?: EnrichedCompany[]
-  enrichmentTimings?: { gemini?: number; sonar?: number }
+  enrichedCompaniesSecondary?: EnrichedCompany[]
+  enrichmentTimings?: { primary?: number; secondary?: number }
 }
 
 type AppView = 'dashboard' | 'campaign'
@@ -987,10 +997,10 @@ function InlineBadge({ children, variant = 'default' }: { children: React.ReactN
 // ─── AGENT STATUS ────────────────────────────────────────────────────────────
 function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
   const agents = [
-    { id: DISCOVERY_MANAGER_ID, name: 'Discovery Manager', desc: 'GPT-4.1: segments & orchestrates multi-agent discovery', icon: FiTarget },
-    { id: ENRICHMENT_GEMINI_ID, name: 'Enrichment (Gemini)', desc: 'Gemini 2.5 Pro: Google Search grounding', icon: FiDatabase },
-    { id: ENRICHMENT_SONAR_ID, name: 'Enrichment (Sonar)', desc: 'Perplexity sonar-pro: web research', icon: FiSearch },
-    { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'GPT-4.1 + Apollo: verified contacts', icon: FiUsers },
+    { id: AGENT_CONFIG.discoveryManager.id, name: AGENT_CONFIG.discoveryManager.name, desc: AGENT_CONFIG.discoveryManager.desc, icon: FiTarget },
+    { id: AGENT_CONFIG.enrichmentPrimary.id, name: AGENT_CONFIG.enrichmentPrimary.name, desc: AGENT_CONFIG.enrichmentPrimary.desc, icon: FiDatabase },
+    { id: AGENT_CONFIG.enrichmentSecondary.id, name: AGENT_CONFIG.enrichmentSecondary.name, desc: AGENT_CONFIG.enrichmentSecondary.desc, icon: FiSearch },
+    { id: AGENT_CONFIG.contactFinder.id, name: AGENT_CONFIG.contactFinder.name, desc: AGENT_CONFIG.contactFinder.desc, icon: FiUsers },
   ]
   return (
     <div className="rounded-lg p-4 mt-auto border-t" style={{ borderColor: 'hsl(35 20% 85%)' }}>
@@ -1393,7 +1403,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                 <FiSearch className="w-3 h-3 text-primary" />
               </div>
               <div>
-                <p className="text-sm font-medium text-foreground">Step 1: Web Research via Sonar Pro</p>
+                <p className="text-sm font-medium text-foreground">Step 1: Web Research</p>
                 <p className="text-xs text-muted-foreground">Searching news articles, industry reports, press releases, and market analyses across multiple search strategies...</p>
               </div>
             </div>
@@ -1428,7 +1438,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
         <div className="text-center py-16 bg-card rounded-lg border border-border/30">
           <FiSearch className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">Ready to discover companies</h3>
-          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">The Discovery pipeline will search the web via Sonar Pro, extract every company name from articles and reports, and build a deduplicated prospect list of up to {campaign.filters?.targetCount ?? 50}+ companies.</p>
+          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">The Discovery pipeline will search the web, extract every company name from articles and reports, and build a deduplicated prospect list of up to {campaign.filters?.targetCount ?? 50}+ companies.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
               <FiSearch className="w-4 h-4" /> Generate Prospect List
@@ -1552,7 +1562,7 @@ function EnrichmentDetailPanel({ ec, label }: { ec: EnrichedCompany; label: stri
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-1">
-        <InlineBadge variant={label === 'Gemini 2.5 Pro' ? 'accent' : 'default'}>{label}</InlineBadge>
+        <InlineBadge variant={label === AGENT_CONFIG.enrichmentPrimary.name ? 'accent' : 'default'}>{label}</InlineBadge>
       </div>
 
       {/* Revenue */}
@@ -1652,38 +1662,38 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
   onFindContacts: () => void
   enrichmentProgress?: { current: number; total: number; completed: string[] } | null
 }) {
-  const geminiData = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
-  const sonarData = Array.isArray(campaign.enrichedCompaniesSonar) ? campaign.enrichedCompaniesSonar : []
-  const hasComparison = geminiData.length > 0 && sonarData.length > 0
-  const hasSingleResult = geminiData.length > 0 || sonarData.length > 0
-  const displayData = geminiData.length > 0 ? geminiData : sonarData
+  const primaryData = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
+  const secondaryData = Array.isArray(campaign.enrichedCompaniesSecondary) ? campaign.enrichedCompaniesSecondary : []
+  const hasComparison = primaryData.length > 0 && secondaryData.length > 0
+  const hasSingleResult = primaryData.length > 0 || secondaryData.length > 0
+  const displayData = primaryData.length > 0 ? primaryData : secondaryData
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
   const selectedCount = displayData.filter(c => c.selected).length
-  const [preferredModel, setPreferredModel] = useState<'gemini' | 'sonar' | null>(null)
+  const [preferredModel, setPreferredModel] = useState<'primary' | 'secondary' | null>(null)
 
   const toggleSelect = (name: string) => {
-    const updatedGemini = geminiData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
-    const updatedSonar = sonarData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
-    onUpdateCampaign({ ...campaign, enrichedCompanies: updatedGemini, enrichedCompaniesSonar: updatedSonar, updatedAt: new Date().toISOString() })
+    const updatedPrimary = primaryData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
+    const updatedSecondary = secondaryData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
+    onUpdateCampaign({ ...campaign, enrichedCompanies: updatedPrimary, enrichedCompaniesSecondary: updatedSecondary, updatedAt: new Date().toISOString() })
   }
 
   const togglePriority = (name: string) => {
-    const updatedGemini = geminiData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
-    const flags = updatedGemini.filter(c => c.priority).map(c => c.company_name)
-    const updatedSonar = sonarData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
-    onUpdateCampaign({ ...campaign, enrichedCompanies: updatedGemini, enrichedCompaniesSonar: updatedSonar, priority_flags: flags, updatedAt: new Date().toISOString() })
+    const updatedPrimary = primaryData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
+    const flags = updatedPrimary.filter(c => c.priority).map(c => c.company_name)
+    const updatedSecondary = secondaryData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
+    onUpdateCampaign({ ...campaign, enrichedCompanies: updatedPrimary, enrichedCompaniesSecondary: updatedSecondary, priority_flags: flags, updatedAt: new Date().toISOString() })
   }
 
-  const findSonarMatch = (companyName: string): EnrichedCompany | null => {
-    return sonarData.find(s => s.company_name === companyName) ?? null
+  const findSecondaryMatch = (companyName: string): EnrichedCompany | null => {
+    return secondaryData.find(s => s.company_name === companyName) ?? null
   }
 
-  const handleSelectModel = (model: 'gemini' | 'sonar') => {
+  const handleSelectModel = (model: 'primary' | 'secondary') => {
     setPreferredModel(model)
-    if (model === 'sonar' && sonarData.length > 0) {
-      onUpdateCampaign({ ...campaign, enrichedCompanies: sonarData, updatedAt: new Date().toISOString() })
-    } else if (model === 'gemini' && geminiData.length > 0) {
-      onUpdateCampaign({ ...campaign, enrichedCompanies: geminiData, updatedAt: new Date().toISOString() })
+    if (model === 'secondary' && secondaryData.length > 0) {
+      onUpdateCampaign({ ...campaign, enrichedCompanies: secondaryData, updatedAt: new Date().toISOString() })
+    } else if (model === 'primary' && primaryData.length > 0) {
+      onUpdateCampaign({ ...campaign, enrichedCompanies: primaryData, updatedAt: new Date().toISOString() })
     }
   }
 
@@ -1697,39 +1707,39 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
           <div className="flex items-start gap-2 mb-3">
             <FiBarChart2 className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-serif font-semibold text-foreground text-sm">Model Comparison: Gemini 2.5 Pro vs Perplexity Sonar Pro</h3>
+              <h3 className="font-serif font-semibold text-foreground text-sm">Model Comparison: {AGENT_CONFIG.enrichmentPrimary.name} vs {AGENT_CONFIG.enrichmentSecondary.name}</h3>
               <p className="text-xs text-muted-foreground mt-0.5">Both models enriched the same companies in parallel. Compare results side-by-side, then select the model you prefer for this workflow.</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            {campaign.enrichmentTimings?.gemini != null && (
-              <InlineBadge variant="accent">Gemini: {(campaign.enrichmentTimings.gemini / 1000).toFixed(1)}s</InlineBadge>
+            {campaign.enrichmentTimings?.primary != null && (
+              <InlineBadge variant="accent">{AGENT_CONFIG.enrichmentPrimary.name}: {(campaign.enrichmentTimings.primary / 1000).toFixed(1)}s</InlineBadge>
             )}
-            {campaign.enrichmentTimings?.sonar != null && (
-              <InlineBadge variant="default">Sonar: {(campaign.enrichmentTimings.sonar / 1000).toFixed(1)}s</InlineBadge>
+            {campaign.enrichmentTimings?.secondary != null && (
+              <InlineBadge variant="default">{AGENT_CONFIG.enrichmentSecondary.name}: {(campaign.enrichmentTimings.secondary / 1000).toFixed(1)}s</InlineBadge>
             )}
             <div className="flex-1" />
             <div className="flex gap-2">
-              <button onClick={() => handleSelectModel('gemini')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${preferredModel === 'gemini' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
-                Use Gemini 2.5 Pro
+              <button onClick={() => handleSelectModel('primary')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${preferredModel === 'primary' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
+                Use {AGENT_CONFIG.enrichmentPrimary.name}
               </button>
-              <button onClick={() => handleSelectModel('sonar')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${preferredModel === 'sonar' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
-                Use Sonar Pro
+              <button onClick={() => handleSelectModel('secondary')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${preferredModel === 'secondary' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
+                Use {AGENT_CONFIG.enrichmentSecondary.name}
               </button>
             </div>
           </div>
           {preferredModel && (
-            <p className="text-xs text-green-700 mt-2 flex items-center gap-1"><FiCheckCircle className="w-3 h-3" /> Selected <strong>{preferredModel === 'gemini' ? 'Gemini 2.5 Pro' : 'Perplexity Sonar Pro'}</strong> as the enrichment source for contacts stage.</p>
+            <p className="text-xs text-green-700 mt-2 flex items-center gap-1"><FiCheckCircle className="w-3 h-3" /> Selected <strong>{preferredModel === 'primary' ? AGENT_CONFIG.enrichmentPrimary.name : AGENT_CONFIG.enrichmentSecondary.name}</strong> as the enrichment source for contacts stage.</p>
           )}
         </div>
       )}
 
       {/* Summaries */}
-      {(campaign.enrichmentSummary || campaign.enrichmentSummarySonar) && !hasComparison && (
+      {(campaign.enrichmentSummary || campaign.enrichmentSummarySecondary) && !hasComparison && (
         <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
           <div className="flex items-start gap-2">
             <HiOutlineSparkles className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.enrichmentSummary || campaign.enrichmentSummarySonar || '')}</div>
+            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.enrichmentSummary || campaign.enrichmentSummarySecondary || '')}</div>
           </div>
         </div>
       )}
@@ -1746,7 +1756,7 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
           <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3">
             <FiRefreshCw className="w-4 h-4 animate-spin" />
             {enrichmentProgress
-              ? `Deep research: ${enrichmentProgress.current} of ${enrichmentProgress.total} companies enriched (Gemini + Sonar per company)`
+              ? `Deep research: ${enrichmentProgress.current} of ${enrichmentProgress.total} companies enriched (dual-model per company)`
               : 'Starting deep company research...'}
           </div>
           {enrichmentProgress && (
@@ -1772,11 +1782,11 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
           {!enrichmentProgress && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-3">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiDatabase className="w-3 h-3" /> Gemini 2.5 Pro</div>
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiDatabase className="w-3 h-3" /> {AGENT_CONFIG.enrichmentPrimary.name}</div>
                 {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
               </div>
               <div className="space-y-3">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiSearch className="w-3 h-3" /> Sonar Pro</div>
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiSearch className="w-3 h-3" /> {AGENT_CONFIG.enrichmentSecondary.name}</div>
                 {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
               </div>
             </div>
@@ -1788,7 +1798,7 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
         <div className="text-center py-16 bg-card rounded-lg border border-border/30">
           <FiDatabase className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">No enrichment data yet</h3>
-          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich. Both Gemini 2.5 Pro and Sonar Pro will run in parallel for comparison.</p>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich. Both enrichment models will run in parallel for comparison.</p>
         </div>
       )}
 
@@ -1804,11 +1814,11 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
           <div className="space-y-3">
             {displayData.map(ec => {
               const isExpanded = expandedCompany === ec.company_name
-              const sonarMatch = findSonarMatch(ec.company_name)
+              const secondaryMatch = findSecondaryMatch(ec.company_name)
               const newsCount = Array.isArray(ec.recent_news) ? ec.recent_news.length : 0
               const csuiteCount = Array.isArray(ec.csuite_changes) ? ec.csuite_changes.length : 0
               const growthCount = Array.isArray(ec.growth_indicators) ? ec.growth_indicators.length : 0
-              const sonarNewsCount = sonarMatch ? (Array.isArray(sonarMatch.recent_news) ? sonarMatch.recent_news.length : 0) : 0
+              const secondaryNewsCount = secondaryMatch ? (Array.isArray(secondaryMatch.recent_news) ? secondaryMatch.recent_news.length : 0) : 0
 
               return (
                 <div key={ec.company_name} className={`bg-card rounded-lg border transition-all ${ec.selected ? 'border-primary/40 shadow-md' : 'border-border/30'}`}>
@@ -1823,13 +1833,13 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-serif font-semibold text-foreground">{ec.company_name}</h3>
                         {ec.revenue?.figure && <InlineBadge variant="accent"><FiDollarSign className="w-3 h-3 mr-0.5" />{ec.revenue.figure}</InlineBadge>}
-                        {sonarMatch?.revenue?.figure && sonarMatch.revenue.figure !== ec.revenue?.figure && (
-                          <InlineBadge variant="default"><FiDollarSign className="w-3 h-3 mr-0.5" />{sonarMatch.revenue.figure} (Sonar)</InlineBadge>
+                        {secondaryMatch?.revenue?.figure && secondaryMatch.revenue.figure !== ec.revenue?.figure && (
+                          <InlineBadge variant="default"><FiDollarSign className="w-3 h-3 mr-0.5" />{secondaryMatch.revenue.figure} (B)</InlineBadge>
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {newsCount > 0 && <InlineBadge variant="muted">{newsCount} news (G)</InlineBadge>}
-                        {sonarNewsCount > 0 && <InlineBadge variant="muted">{sonarNewsCount} news (S)</InlineBadge>}
+                        {newsCount > 0 && <InlineBadge variant="muted">{newsCount} news (A)</InlineBadge>}
+                        {secondaryNewsCount > 0 && <InlineBadge variant="muted">{secondaryNewsCount} news (B)</InlineBadge>}
                         {csuiteCount > 0 && <InlineBadge variant="warning">{csuiteCount} C-suite</InlineBadge>}
                         {growthCount > 0 && <InlineBadge variant="success"><FiTrendingUp className="w-3 h-3 mr-0.5" />{growthCount} growth</InlineBadge>}
                       </div>
@@ -1841,17 +1851,17 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
 
                   {isExpanded && (
                     <div className="border-t border-border/20 pt-4 px-4 pb-4">
-                      {hasComparison && sonarMatch ? (
+                      {hasComparison && secondaryMatch ? (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                           <div className="border border-amber-200/50 rounded-lg p-3 bg-amber-50/20">
-                            <EnrichmentDetailPanel ec={ec} label="Gemini 2.5 Pro" />
+                            <EnrichmentDetailPanel ec={ec} label={AGENT_CONFIG.enrichmentPrimary.name} />
                           </div>
                           <div className="border border-blue-200/50 rounded-lg p-3 bg-blue-50/20">
-                            <EnrichmentDetailPanel ec={sonarMatch} label="Sonar Pro" />
+                            <EnrichmentDetailPanel ec={secondaryMatch} label={AGENT_CONFIG.enrichmentSecondary.name} />
                           </div>
                         </div>
                       ) : (
-                        <EnrichmentDetailPanel ec={ec} label={geminiData.length > 0 ? 'Gemini 2.5 Pro' : 'Sonar Pro'} />
+                        <EnrichmentDetailPanel ec={ec} label={primaryData.length > 0 ? AGENT_CONFIG.enrichmentPrimary.name : AGENT_CONFIG.enrichmentSecondary.name} />
                       )}
                     </div>
                   )}
@@ -2516,39 +2526,39 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
   const enrichSingleCompany = useCallback(async (
     company: Company,
     campaign: Campaign,
-    onComplete: (name: string, gemini: EnrichedCompany | null, sonar: EnrichedCompany | null) => void
+    onComplete: (name: string, primary: EnrichedCompany | null, secondary: EnrichedCompany | null) => void
   ) => {
     const message = buildEnrichmentPrompt(company, campaign)
     const start = Date.now()
 
-    const [geminiResult, sonarResult] = await Promise.allSettled([
-      callAIAgent(message, ENRICHMENT_GEMINI_ID),
-      callAIAgent(message, ENRICHMENT_SONAR_ID),
+    const [primaryResult, secondaryResult] = await Promise.allSettled([
+      callAIAgent(message, ENRICHMENT_PRIMARY_ID),
+      callAIAgent(message, ENRICHMENT_SECONDARY_ID),
     ])
     const elapsed = Date.now() - start
 
-    let geminiCompany: EnrichedCompany | null = null
-    let sonarCompany: EnrichedCompany | null = null
+    let primaryCompany: EnrichedCompany | null = null
+    let secondaryCompany: EnrichedCompany | null = null
 
-    if (geminiResult.status === 'fulfilled') {
-      const parsed = parseAgentResult(geminiResult.value)
+    if (primaryResult.status === 'fulfilled') {
+      const parsed = parseAgentResult(primaryResult.value)
       if (parsed) {
         const enriched = parseEnrichmentResult(parsed)
-        geminiCompany = enriched[0] ?? null
+        primaryCompany = enriched[0] ?? null
       }
     }
 
-    if (sonarResult.status === 'fulfilled') {
-      const parsed = parseAgentResult(sonarResult.value)
+    if (secondaryResult.status === 'fulfilled') {
+      const parsed = parseAgentResult(secondaryResult.value)
       if (parsed) {
         const enriched = parseEnrichmentResult(parsed)
-        sonarCompany = enriched[0] ?? null
+        secondaryCompany = enriched[0] ?? null
       }
     }
 
-    console.log(`[enrichSingleCompany] ${company.name}: Gemini=${geminiCompany ? 'OK' : 'FAIL'}, Sonar=${sonarCompany ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
-    onComplete(company.name, geminiCompany, sonarCompany)
-    return { name: company.name, gemini: geminiCompany, sonar: sonarCompany, elapsed }
+    console.log(`[enrichSingleCompany] ${company.name}: Primary=${primaryCompany ? 'OK' : 'FAIL'}, Secondary=${secondaryCompany ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
+    onComplete(company.name, primaryCompany, secondaryCompany)
+    return { name: company.name, primary: primaryCompany, secondary: secondaryCompany, elapsed }
   }, [buildEnrichmentPrompt])
 
   const runEnrichment = useCallback(async (campaign: Campaign) => {
@@ -2556,10 +2566,10 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
     if (selected.length === 0) return
     setLoading(true)
     setError(null)
-    setActiveAgentId(ENRICHMENT_GEMINI_ID)
+    setActiveAgentId(ENRICHMENT_PRIMARY_ID)
 
-    const geminiResults: EnrichedCompany[] = []
-    const sonarResults: EnrichedCompany[] = []
+    const primaryResults: EnrichedCompany[] = []
+    const secondaryResults: EnrichedCompany[] = []
     let totalTime = 0
 
     setEnrichmentProgress({ current: 0, total: selected.length, completed: [] })
@@ -2572,29 +2582,29 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
       let completedCount = 0
 
       const processCompany = (company: Company) => {
-        return enrichSingleCompany(company, campaign, (name, gemini, sonar) => {
+        return enrichSingleCompany(company, campaign, (name, primary, secondary) => {
           completedCount++
-          if (gemini) geminiResults.push(gemini)
-          if (sonar) sonarResults.push(sonar)
+          if (primary) primaryResults.push(primary)
+          if (secondary) secondaryResults.push(secondary)
 
           setEnrichmentProgress({
             current: completedCount,
             total: selected.length,
-            completed: [...geminiResults.map(g => g.company_name)],
+            completed: [...primaryResults.map(g => g.company_name)],
           })
 
           // Toggle active agent indicator
-          setActiveAgentId(completedCount % 2 === 0 ? ENRICHMENT_GEMINI_ID : ENRICHMENT_SONAR_ID)
+          setActiveAgentId(completedCount % 2 === 0 ? ENRICHMENT_PRIMARY_ID : ENRICHMENT_SECONDARY_ID)
 
           // Progressive update — show results as they arrive
           updateCampaign({
             ...campaign,
-            enrichedCompanies: [...geminiResults],
-            enrichedCompaniesSonar: [...sonarResults],
+            enrichedCompanies: [...primaryResults],
+            enrichedCompaniesSecondary: [...secondaryResults],
             stage: 'enrichment',
-            enrichmentSummary: `Enriched ${geminiResults.length} of ${selected.length} companies via Gemini 2.5 Pro.`,
-            enrichmentSummarySonar: `Enriched ${sonarResults.length} of ${selected.length} companies via Sonar Pro.`,
-            enrichmentTimings: { gemini: totalTime, sonar: totalTime },
+            enrichmentSummary: `Enriched ${primaryResults.length} of ${selected.length} companies via ${AGENT_CONFIG.enrichmentPrimary.name}.`,
+            enrichmentSummarySecondary: `Enriched ${secondaryResults.length} of ${selected.length} companies via ${AGENT_CONFIG.enrichmentSecondary.name}.`,
+            enrichmentTimings: { primary: totalTime, secondary: totalTime },
             updatedAt: new Date().toISOString(),
           })
         })
@@ -2619,23 +2629,23 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
         }
       }
 
-      if (geminiResults.length === 0 && sonarResults.length === 0) {
+      if (primaryResults.length === 0 && secondaryResults.length === 0) {
         setError('Both enrichment models failed to return results. Please try again.')
       }
 
       // Final update with complete data
       updateCampaign({
         ...campaign,
-        enrichedCompanies: geminiResults,
-        enrichedCompaniesSonar: sonarResults,
+        enrichedCompanies: primaryResults,
+        enrichedCompaniesSecondary: secondaryResults,
         stage: 'enrichment',
-        enrichmentSummary: `Enriched ${geminiResults.length} companies with revenue, news, leadership, growth signals, and competitive intelligence via Gemini 2.5 Pro.`,
-        enrichmentSummarySonar: `Enriched ${sonarResults.length} companies via Sonar Pro for comparison.`,
-        enrichmentTimings: { gemini: totalTime, sonar: totalTime },
+        enrichmentSummary: `Enriched ${primaryResults.length} companies with revenue, news, leadership, growth signals, and competitive intelligence via ${AGENT_CONFIG.enrichmentPrimary.name}.`,
+        enrichmentSummarySecondary: `Enriched ${secondaryResults.length} companies via ${AGENT_CONFIG.enrichmentSecondary.name} for comparison.`,
+        enrichmentTimings: { primary: totalTime, secondary: totalTime },
         updatedAt: new Date().toISOString(),
       })
 
-      console.log(`[runEnrichment] Complete: ${geminiResults.length} Gemini, ${sonarResults.length} Sonar. Total time: ${(totalTime / 1000).toFixed(1)}s across ${selected.length} companies`)
+      console.log(`[runEnrichment] Complete: ${primaryResults.length} Primary, ${secondaryResults.length} Secondary. Total time: ${(totalTime / 1000).toFixed(1)}s across ${selected.length} companies`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrichment failed. Please try again.')
     }
