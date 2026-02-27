@@ -52,7 +52,7 @@
     },
     {
       "agent_id": "699fb657119509164a42675b",
-      "agent_name": "Company Enrichment Agent",
+      "agent_name": "Company Enrichment Agent (Primary)",
       "node_id": "company_enrichment",
       "provider": "google",
       "model": "gemini-2.5-pro",
@@ -60,7 +60,10 @@
       "has_tools": false,
       "has_file_output": false,
       "has_image_output": false,
-      "has_voice": false
+      "has_voice": false,
+      "enrichment_role": "primary",
+      "consolidated_with": "699fbeb5511be0527fc9339b",
+      "expanded_schema": ["risk_insurance_challenges", "hr_workforce_challenges", "key_sales_nuggets"]
     },
     {
       "agent_id": "699fbeb5511be0527fc9339b",
@@ -73,7 +76,9 @@
       "has_file_output": false,
       "has_image_output": false,
       "has_voice": false,
-      "is_comparison_variant_of": "699fb657119509164a42675b"
+      "enrichment_role": "secondary",
+      "consolidated_with": "699fb657119509164a42675b",
+      "expanded_schema": ["risk_insurance_challenges", "hr_workforce_challenges", "key_sales_nuggets"]
     },
     {
       "agent_id": "699fb67d511be0527fc9338e",
@@ -97,7 +102,8 @@
   ],
   "workflow_structure": {
     "pattern": "manager-subagents + sequential",
-    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> company_enrichment / company_enrichment_secondary -> contact_finder -> output_node",
-    "discovery_pipeline": "Manager segments directive -> Researcher searches web -> Extractor pulls company names from findings -> Manager deduplicates and consolidates"
+    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> company_enrichment + company_enrichment_secondary (parallel, consolidated) -> contact_finder -> output_node",
+    "discovery_pipeline": "Manager segments directive -> Researcher searches web -> Extractor pulls company names from findings -> Manager deduplicates and consolidates",
+    "enrichment_pipeline": "Both enrichment agents run in parallel per company -> Results consolidated client-side (deduplicated news, merged competitive intel, combined sales intelligence) -> Single truth per company"
   }
 }

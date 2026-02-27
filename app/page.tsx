@@ -27,8 +27,7 @@ const AGENT_CONFIG = {
   discoveryManager: { id: DISCOVERY_MANAGER_ID, name: 'Discovery Manager', desc: 'Orchestrates multi-agent discovery pipeline' },
   discoveryResearcher: { id: DISCOVERY_RESEARCHER_ID, name: 'Discovery Researcher', desc: 'Web research across news, reports & directories' },
   companyExtractor: { id: COMPANY_EXTRACTOR_ID, name: 'Company Extractor', desc: 'Extracts and structures company data from findings' },
-  enrichmentPrimary: { id: ENRICHMENT_PRIMARY_ID, name: 'Enrichment (Primary)', desc: 'Deep company research with search grounding' },
-  enrichmentSecondary: { id: ENRICHMENT_SECONDARY_ID, name: 'Enrichment (Secondary)', desc: 'Parallel enrichment for A/B comparison' },
+  enrichment: { id: ENRICHMENT_PRIMARY_ID, secondaryId: ENRICHMENT_SECONDARY_ID, name: 'Deep Enrichment', desc: 'Dual-model research with fact consolidation & sales intelligence' },
   contactFinder: { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'Verified contacts via Apollo integration' },
 }
 
@@ -95,6 +94,7 @@ interface NewsItem {
   date: string
   headline: string
   summary: string
+  sales_relevance?: string
 }
 
 interface CSuiteChange {
@@ -107,12 +107,38 @@ interface CSuiteChange {
 interface GrowthIndicator {
   type: string
   detail: string
+  implications?: string
 }
 
 interface CompetitiveIntel {
   vendors: string[]
   partners: string[]
   competitors: string[]
+}
+
+interface RiskInsuranceChallenge {
+  challenge: string
+  trigger_event: string
+  urgency: string
+  relevant_service: string
+  service_provider: string
+  conversation_opener: string
+}
+
+interface HRWorkforceChallenge {
+  challenge: string
+  trigger_event: string
+  urgency: string
+  relevant_service: string
+  service_provider: string
+  conversation_opener: string
+}
+
+interface SalesNugget {
+  nugget: string
+  category: string
+  source: string
+  talking_point: string
 }
 
 interface EnrichedCompany {
@@ -122,6 +148,9 @@ interface EnrichedCompany {
   csuite_changes: CSuiteChange[]
   growth_indicators: GrowthIndicator[]
   competitive_intel: CompetitiveIntel
+  risk_insurance_challenges: RiskInsuranceChallenge[]
+  hr_workforce_challenges: HRWorkforceChallenge[]
+  key_sales_nuggets: SalesNugget[]
   selected?: boolean
   note?: string
   priority?: boolean
@@ -178,13 +207,11 @@ interface Campaign {
   priority_flags: string[]
   searchSummary?: string
   enrichmentSummary?: string
-  enrichmentSummarySecondary?: string
   contactSummary?: string
   totalContactsFound?: number
   segmentationStrategy?: SegmentStrategy[]
   duplicatesRemoved?: number
-  enrichedCompaniesSecondary?: EnrichedCompany[]
-  enrichmentTimings?: { primary?: number; secondary?: number }
+  enrichmentTime?: number
 }
 
 type AppView = 'dashboard' | 'campaign'
@@ -344,6 +371,17 @@ function getSampleCampaign(): Campaign {
           { type: 'Expansion', detail: 'Opened new offices in London and Singapore' },
         ],
         competitive_intel: { vendors: ['AWS', 'Databricks'], partners: ['Deloitte', 'Accenture'], competitors: ['Looker', 'Tableau', 'ThoughtSpot'] },
+        risk_insurance_challenges: [
+          { challenge: 'Rapid international expansion creates complex regulatory compliance needs', trigger_event: 'Opened offices in London and Singapore in 2024', urgency: 'High', relevant_service: 'Global Risk Management & Compliance', service_provider: 'WTW', conversation_opener: 'With your new London and Singapore offices, have you assessed the regulatory compliance landscape across those jurisdictions for data handling and privacy?' },
+          { challenge: 'Series C funding and valuation growth increases D&O exposure', trigger_event: '$80M Series C funding round', urgency: 'Medium', relevant_service: 'Directors & Officers Liability', service_provider: 'Marsh', conversation_opener: 'Post-Series C, your board exposure has changed significantly — is your D&O coverage scaled to your new valuation?' },
+        ],
+        hr_workforce_challenges: [
+          { challenge: 'Aggressive hiring in competitive talent market', trigger_event: '45 open positions across engineering and sales', urgency: 'High', relevant_service: 'Total Rewards & Talent Strategy', service_provider: 'Mercer', conversation_opener: 'With 45 open roles, how are you positioning your total rewards package to compete for top data analytics talent?' },
+        ],
+        key_sales_nuggets: [
+          { nugget: 'New CRO Sarah Chen joined from Snowflake — likely reviewing all vendor relationships', category: 'Leadership Change', source: 'Press Release Sep 2024', talking_point: 'New CROs typically reassess vendor partnerships within their first 90 days. This is an ideal time to introduce our capabilities.' },
+          { nugget: '$80M Series C with Sequoia backing signals enterprise-grade scaling needs', category: 'Funding', source: 'Crunchbase', talking_point: 'Rapid scaling after Series C typically creates gaps in risk management and employee benefits infrastructure.' },
+        ],
       },
       {
         company_name: 'CyberShield Solutions', selected: true,
@@ -356,6 +394,15 @@ function getSampleCampaign(): Campaign {
           { type: 'Funding', detail: 'Series B of $30M closed in Q3 2024' },
         ],
         competitive_intel: { vendors: ['Microsoft Azure'], partners: ['PwC'], competitors: ['CrowdStrike', 'SentinelOne'] },
+        risk_insurance_challenges: [
+          { challenge: 'Federal contract creates specific cyber liability and compliance requirements', trigger_event: '$15M DoD contract won in Dec 2024', urgency: 'High', relevant_service: 'Cyber Risk & Government Compliance', service_provider: 'Aon', conversation_opener: 'Federal contracts come with CMMC and FedRAMP requirements — have you reviewed your cyber insurance coverage to match these new obligations?' },
+        ],
+        hr_workforce_challenges: [
+          { challenge: 'Security clearance requirements limit talent pool for federal work', trigger_event: 'Multi-year DoD contract', urgency: 'Medium', relevant_service: 'Workforce Planning & Security Talent', service_provider: 'Mercer', conversation_opener: 'Cleared security professionals are in high demand — how are you structuring compensation to attract and retain this specialized talent?' },
+        ],
+        key_sales_nuggets: [
+          { nugget: '$15M DoD contract signals shift from commercial to federal — compliance needs will multiply', category: 'Contract Win', source: 'Press Release Dec 2024', talking_point: 'Federal work requires a different risk profile than commercial cybersecurity. This transition creates immediate consulting opportunities.' },
+        ],
       },
     ],
     contacts: [
@@ -383,6 +430,7 @@ function getSampleCampaign(): Campaign {
     updatedAt: '2024-12-05T14:30:00Z',
     priority_flags: ['DataVault Technologies'],
     searchSummary: 'Found 4 highly relevant companies matching the criteria for enterprise SaaS in data analytics, cloud infrastructure, and cybersecurity sectors across North America.',
+    enrichmentTime: 45000,
     enrichmentSummary: 'Successfully enriched 2 companies with comprehensive revenue data, recent news, leadership changes, growth signals, and competitive landscape insights.',
     contactSummary: 'Identified 5 decision-maker contacts across 2 target companies, with 4 verified email addresses.',
     totalContactsFound: 5,
@@ -998,8 +1046,7 @@ function InlineBadge({ children, variant = 'default' }: { children: React.ReactN
 function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
   const agents = [
     { id: AGENT_CONFIG.discoveryManager.id, name: AGENT_CONFIG.discoveryManager.name, desc: AGENT_CONFIG.discoveryManager.desc, icon: FiTarget },
-    { id: AGENT_CONFIG.enrichmentPrimary.id, name: AGENT_CONFIG.enrichmentPrimary.name, desc: AGENT_CONFIG.enrichmentPrimary.desc, icon: FiDatabase },
-    { id: AGENT_CONFIG.enrichmentSecondary.id, name: AGENT_CONFIG.enrichmentSecondary.name, desc: AGENT_CONFIG.enrichmentSecondary.desc, icon: FiSearch },
+    { id: AGENT_CONFIG.enrichment.id, name: AGENT_CONFIG.enrichment.name, desc: AGENT_CONFIG.enrichment.desc, icon: FiDatabase },
     { id: AGENT_CONFIG.contactFinder.id, name: AGENT_CONFIG.contactFinder.name, desc: AGENT_CONFIG.contactFinder.desc, icon: FiUsers },
   ]
   return (
@@ -1007,7 +1054,7 @@ function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
       <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><FiLayers className="w-3.5 h-3.5" /> Agents</h3>
       <div className="space-y-1.5">
         {agents.map(a => {
-          const isActive = activeAgentId === a.id
+          const isActive = activeAgentId === a.id || (a.id === AGENT_CONFIG.enrichment.id && activeAgentId === AGENT_CONFIG.enrichment.secondaryId)
           const Icon = a.icon
           return (
             <div key={a.id} className={`flex items-start gap-2 p-1.5 rounded-md text-xs transition-all ${isActive ? 'bg-primary/10' : ''}`}>
@@ -1553,106 +1600,225 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
   )
 }
 
-// ─── ENRICHMENT DETAIL PANEL (reusable for each model side) ─────────────────
-function EnrichmentDetailPanel({ ec, label }: { ec: EnrichedCompany; label: string }) {
+// ─── ENRICHMENT DETAIL PANEL (Consolidated View) ────────────────────────────
+function EnrichmentDetailPanel({ ec }: { ec: EnrichedCompany }) {
   const newsCount = Array.isArray(ec.recent_news) ? ec.recent_news.length : 0
   const csuiteCount = Array.isArray(ec.csuite_changes) ? ec.csuite_changes.length : 0
   const growthCount = Array.isArray(ec.growth_indicators) ? ec.growth_indicators.length : 0
+  const riskCount = Array.isArray(ec.risk_insurance_challenges) ? ec.risk_insurance_challenges.length : 0
+  const hrCount = Array.isArray(ec.hr_workforce_challenges) ? ec.hr_workforce_challenges.length : 0
+  const nuggetCount = Array.isArray(ec.key_sales_nuggets) ? ec.key_sales_nuggets.length : 0
+  const [activeTab, setActiveTab] = useState<'overview' | 'sales' | 'competitive'>('overview')
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-1">
-        <InlineBadge variant={label === AGENT_CONFIG.enrichmentPrimary.name ? 'accent' : 'default'}>{label}</InlineBadge>
+      {/* Tab Navigation */}
+      <div className="flex gap-1 bg-muted/30 rounded-lg p-1">
+        {[
+          { key: 'overview' as const, label: 'Overview', count: newsCount + csuiteCount + growthCount },
+          { key: 'sales' as const, label: 'Sales Intel', count: riskCount + hrCount + nuggetCount },
+          { key: 'competitive' as const, label: 'Competitive', count: 0 },
+        ].map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === tab.key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
+            {tab.label}{tab.count > 0 ? ` (${tab.count})` : ''}
+          </button>
+        ))}
       </div>
 
-      {/* Revenue */}
-      {ec.revenue && (
-        <div>
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiDollarSign className="w-3 h-3" /> Revenue</h4>
-          <div className="bg-muted/30 rounded-lg p-2.5 text-sm">
-            <p className="font-semibold text-foreground">{ec.revenue?.figure ?? 'N/A'}</p>
-            <p className="text-xs text-muted-foreground">Year: {ec.revenue?.year ?? 'N/A'} | Source: {ec.revenue?.source ?? 'N/A'}</p>
-          </div>
+      {/* OVERVIEW TAB */}
+      {activeTab === 'overview' && (
+        <div className="space-y-4">
+          {/* Revenue */}
+          {ec.revenue && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiDollarSign className="w-3 h-3" /> Revenue</h4>
+              <div className="bg-muted/30 rounded-lg p-2.5 text-sm">
+                <p className="font-semibold text-foreground">{ec.revenue?.figure ?? 'N/A'}</p>
+                <p className="text-xs text-muted-foreground">Year: {ec.revenue?.year ?? 'N/A'} | Source: {ec.revenue?.source ?? 'N/A'}</p>
+              </div>
+            </div>
+          )}
+
+          {/* News */}
+          {newsCount > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiFlag className="w-3 h-3" /> Recent News ({newsCount})</h4>
+              <div className="space-y-1.5">
+                {ec.recent_news.map((n, i) => (
+                  <div key={i} className="bg-muted/30 rounded-lg p-2.5">
+                    <div className="flex items-start justify-between gap-1">
+                      <h5 className="text-xs font-medium text-foreground leading-snug">{n.headline}</h5>
+                      <span className="text-[10px] text-muted-foreground flex-shrink-0">{n.date}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.summary}</p>
+                    {n.sales_relevance && (
+                      <p className="text-xs text-primary mt-1 flex items-center gap-1"><FiTarget className="w-3 h-3 flex-shrink-0" /> {n.sales_relevance}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* C-Suite */}
+          {csuiteCount > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiUsers className="w-3 h-3" /> Leadership Changes ({csuiteCount})</h4>
+              <div className="space-y-1.5">
+                {ec.csuite_changes.map((cs, i) => (
+                  <div key={i} className="bg-muted/30 rounded-lg p-2.5 text-xs">
+                    <p className="font-medium text-foreground">{cs.name}</p>
+                    <p className="text-muted-foreground">{cs.previous_role} <FiArrowRight className="w-2.5 h-2.5 inline mx-0.5" /> {cs.new_role}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{cs.date}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Growth */}
+          {growthCount > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiTrendingUp className="w-3 h-3" /> Growth Signals ({growthCount})</h4>
+              <div className="space-y-1.5">
+                {ec.growth_indicators.map((gi, i) => (
+                  <div key={i} className="bg-green-50 border border-green-200 rounded-lg px-2.5 py-1.5 text-xs">
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium text-green-800">{gi.type}:</span>
+                      <span className="text-green-700">{gi.detail}</span>
+                    </div>
+                    {gi.implications && (
+                      <p className="text-green-600 mt-0.5 text-[11px]"><FiArrowRight className="w-2.5 h-2.5 inline mr-0.5" />{gi.implications}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {newsCount === 0 && csuiteCount === 0 && growthCount === 0 && !ec.revenue && (
+            <p className="text-sm text-muted-foreground italic">No overview data available for this company.</p>
+          )}
         </div>
       )}
 
-      {/* News */}
-      {newsCount > 0 && (
-        <div>
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiFlag className="w-3 h-3" /> News ({newsCount})</h4>
-          <div className="space-y-1.5">
-            {ec.recent_news.map((n, i) => (
-              <div key={i} className="bg-muted/30 rounded-lg p-2.5">
-                <div className="flex items-start justify-between gap-1">
-                  <h5 className="text-xs font-medium text-foreground leading-snug">{n.headline}</h5>
-                  <span className="text-[10px] text-muted-foreground flex-shrink-0">{n.date}</span>
+      {/* SALES INTEL TAB */}
+      {activeTab === 'sales' && (
+        <div className="space-y-4">
+          {/* Key Sales Nuggets */}
+          {nuggetCount > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiAward className="w-3 h-3" /> Key Sales Nuggets ({nuggetCount})</h4>
+              <div className="space-y-1.5">
+                {ec.key_sales_nuggets.map((sn, i) => (
+                  <div key={i} className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                    <div className="flex items-start gap-2">
+                      <FiTarget className="w-3.5 h-3.5 text-amber-700 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-amber-900">{sn.nugget}</p>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <InlineBadge variant="accent">{sn.category}</InlineBadge>
+                          <span className="text-[10px] text-amber-700">Source: {sn.source}</span>
+                        </div>
+                        {sn.talking_point && (
+                          <p className="text-[11px] text-amber-800 mt-1 bg-amber-100/50 rounded px-2 py-1 leading-relaxed"><strong>Talking Point:</strong> {sn.talking_point}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Risk & Insurance Challenges */}
+          {riskCount > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiAlertCircle className="w-3 h-3" /> Risk & Insurance Challenges ({riskCount})</h4>
+              <div className="space-y-1.5">
+                {ec.risk_insurance_challenges.map((rc, i) => (
+                  <div key={i} className="bg-red-50/50 border border-red-200/60 rounded-lg p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-medium text-foreground">{rc.challenge}</p>
+                      <InlineBadge variant={rc.urgency?.toLowerCase() === 'high' ? 'danger' : rc.urgency?.toLowerCase() === 'medium' ? 'warning' : 'muted'}>{rc.urgency || 'N/A'}</InlineBadge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1"><span className="font-medium">Trigger:</span> {rc.trigger_event}</p>
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      <InlineBadge variant="default">{rc.relevant_service}</InlineBadge>
+                      <span className="text-[10px] text-muted-foreground">{rc.service_provider}</span>
+                    </div>
+                    {rc.conversation_opener && (
+                      <p className="text-[11px] text-primary mt-1.5 bg-primary/5 rounded px-2 py-1 leading-relaxed"><strong>Opener:</strong> {rc.conversation_opener}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* HR & Workforce Challenges */}
+          {hrCount > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiBriefcase className="w-3 h-3" /> HR & Workforce Challenges ({hrCount})</h4>
+              <div className="space-y-1.5">
+                {ec.hr_workforce_challenges.map((hc, i) => (
+                  <div key={i} className="bg-blue-50/50 border border-blue-200/60 rounded-lg p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-medium text-foreground">{hc.challenge}</p>
+                      <InlineBadge variant={hc.urgency?.toLowerCase() === 'high' ? 'danger' : hc.urgency?.toLowerCase() === 'medium' ? 'warning' : 'muted'}>{hc.urgency || 'N/A'}</InlineBadge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1"><span className="font-medium">Trigger:</span> {hc.trigger_event}</p>
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      <InlineBadge variant="success">{hc.relevant_service}</InlineBadge>
+                      <span className="text-[10px] text-muted-foreground">{hc.service_provider}</span>
+                    </div>
+                    {hc.conversation_opener && (
+                      <p className="text-[11px] text-primary mt-1.5 bg-primary/5 rounded px-2 py-1 leading-relaxed"><strong>Opener:</strong> {hc.conversation_opener}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {riskCount === 0 && hrCount === 0 && nuggetCount === 0 && (
+            <p className="text-sm text-muted-foreground italic">No sales intelligence data available for this company.</p>
+          )}
+        </div>
+      )}
+
+      {/* COMPETITIVE TAB */}
+      {activeTab === 'competitive' && (
+        <div className="space-y-4">
+          {ec.competitive_intel && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiBarChart2 className="w-3 h-3" /> Competitive Landscape</h4>
+              <div className="space-y-2">
+                <div className="bg-muted/30 rounded-lg p-2.5">
+                  <p className="text-[10px] font-medium text-muted-foreground mb-1">Vendors</p>
+                  <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.vendors) && ec.competitive_intel.vendors.length > 0 ? ec.competitive_intel.vendors.map((v, i) => <InlineBadge key={i} variant="default">{v}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None identified</span>}</div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.summary}</p>
+                <div className="bg-muted/30 rounded-lg p-2.5">
+                  <p className="text-[10px] font-medium text-muted-foreground mb-1">Partners</p>
+                  <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.partners) && ec.competitive_intel.partners.length > 0 ? ec.competitive_intel.partners.map((p, i) => <InlineBadge key={i} variant="success">{p}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None identified</span>}</div>
+                </div>
+                <div className="bg-muted/30 rounded-lg p-2.5">
+                  <p className="text-[10px] font-medium text-muted-foreground mb-1">Competitors</p>
+                  <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.competitors) && ec.competitive_intel.competitors.length > 0 ? ec.competitive_intel.competitors.map((c, i) => <InlineBadge key={i} variant="warning">{c}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None identified</span>}</div>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* C-Suite */}
-      {csuiteCount > 0 && (
-        <div>
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiUsers className="w-3 h-3" /> C-Suite ({csuiteCount})</h4>
-          <div className="space-y-1.5">
-            {ec.csuite_changes.map((cs, i) => (
-              <div key={i} className="bg-muted/30 rounded-lg p-2.5 text-xs">
-                <p className="font-medium text-foreground">{cs.name}</p>
-                <p className="text-muted-foreground">{cs.previous_role} <FiArrowRight className="w-2.5 h-2.5 inline mx-0.5" /> {cs.new_role}</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">{cs.date}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Growth */}
-      {growthCount > 0 && (
-        <div>
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiTrendingUp className="w-3 h-3" /> Growth ({growthCount})</h4>
-          <div className="flex flex-wrap gap-1.5">
-            {ec.growth_indicators.map((gi, i) => (
-              <div key={i} className="bg-green-50 border border-green-200 rounded px-2 py-1 text-xs">
-                <span className="font-medium text-green-800">{gi.type}:</span> <span className="text-green-700">{gi.detail}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Competitive Intel */}
-      {ec.competitive_intel && (
-        <div>
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiBarChart2 className="w-3 h-3" /> Competitive Intel</h4>
-          <div className="space-y-2">
-            <div className="bg-muted/30 rounded-lg p-2.5">
-              <p className="text-[10px] font-medium text-muted-foreground mb-1">Vendors</p>
-              <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.vendors) && ec.competitive_intel.vendors.length > 0 ? ec.competitive_intel.vendors.map((v, i) => <InlineBadge key={i} variant="default">{v}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None</span>}</div>
             </div>
-            <div className="bg-muted/30 rounded-lg p-2.5">
-              <p className="text-[10px] font-medium text-muted-foreground mb-1">Partners</p>
-              <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.partners) && ec.competitive_intel.partners.length > 0 ? ec.competitive_intel.partners.map((p, i) => <InlineBadge key={i} variant="success">{p}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None</span>}</div>
-            </div>
-            <div className="bg-muted/30 rounded-lg p-2.5">
-              <p className="text-[10px] font-medium text-muted-foreground mb-1">Competitors</p>
-              <div className="flex flex-wrap gap-1">{Array.isArray(ec.competitive_intel?.competitors) && ec.competitive_intel.competitors.length > 0 ? ec.competitive_intel.competitors.map((c, i) => <InlineBadge key={i} variant="warning">{c}</InlineBadge>) : <span className="text-[10px] text-muted-foreground">None</span>}</div>
-            </div>
-          </div>
+          )}
+          {!ec.competitive_intel && (
+            <p className="text-sm text-muted-foreground italic">No competitive intelligence available.</p>
+          )}
         </div>
-      )}
-
-      {newsCount === 0 && csuiteCount === 0 && growthCount === 0 && !ec.revenue && (
-        <p className="text-sm text-muted-foreground italic">No data returned from {label}</p>
       )}
     </div>
   )
 }
 
-// ─── ENRICHMENT VIEW (Side-by-Side Comparison) ──────────────────────────────
+// ─── ENRICHMENT VIEW (Consolidated) ─────────────────────────────────────────
 function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, onFindContacts, enrichmentProgress }: {
   campaign: Campaign
   onUpdateCampaign: (c: Campaign) => void
@@ -1662,84 +1828,36 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
   onFindContacts: () => void
   enrichmentProgress?: { current: number; total: number; completed: string[] } | null
 }) {
-  const primaryData = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
-  const secondaryData = Array.isArray(campaign.enrichedCompaniesSecondary) ? campaign.enrichedCompaniesSecondary : []
-  const hasComparison = primaryData.length > 0 && secondaryData.length > 0
-  const hasSingleResult = primaryData.length > 0 || secondaryData.length > 0
-  const displayData = primaryData.length > 0 ? primaryData : secondaryData
+  const enrichedData = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
-  const selectedCount = displayData.filter(c => c.selected).length
-  const [preferredModel, setPreferredModel] = useState<'primary' | 'secondary' | null>(null)
+  const selectedCount = enrichedData.filter(c => c.selected).length
 
   const toggleSelect = (name: string) => {
-    const updatedPrimary = primaryData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
-    const updatedSecondary = secondaryData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
-    onUpdateCampaign({ ...campaign, enrichedCompanies: updatedPrimary, enrichedCompaniesSecondary: updatedSecondary, updatedAt: new Date().toISOString() })
+    const updated = enrichedData.map(c => c.company_name === name ? { ...c, selected: !c.selected } : c)
+    onUpdateCampaign({ ...campaign, enrichedCompanies: updated, updatedAt: new Date().toISOString() })
   }
 
   const togglePriority = (name: string) => {
-    const updatedPrimary = primaryData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
-    const flags = updatedPrimary.filter(c => c.priority).map(c => c.company_name)
-    const updatedSecondary = secondaryData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
-    onUpdateCampaign({ ...campaign, enrichedCompanies: updatedPrimary, enrichedCompaniesSecondary: updatedSecondary, priority_flags: flags, updatedAt: new Date().toISOString() })
-  }
-
-  const findSecondaryMatch = (companyName: string): EnrichedCompany | null => {
-    return secondaryData.find(s => s.company_name === companyName) ?? null
-  }
-
-  const handleSelectModel = (model: 'primary' | 'secondary') => {
-    setPreferredModel(model)
-    if (model === 'secondary' && secondaryData.length > 0) {
-      onUpdateCampaign({ ...campaign, enrichedCompanies: secondaryData, updatedAt: new Date().toISOString() })
-    } else if (model === 'primary' && primaryData.length > 0) {
-      onUpdateCampaign({ ...campaign, enrichedCompanies: primaryData, updatedAt: new Date().toISOString() })
-    }
+    const updated = enrichedData.map(c => c.company_name === name ? { ...c, priority: !c.priority } : c)
+    const flags = updated.filter(c => c.priority).map(c => c.company_name)
+    onUpdateCampaign({ ...campaign, enrichedCompanies: updated, priority_flags: flags, updatedAt: new Date().toISOString() })
   }
 
   return (
     <div>
       <ProgressStepper stage="enrichment" />
 
-      {/* Comparison header */}
-      {hasComparison && (
-        <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
-          <div className="flex items-start gap-2 mb-3">
-            <FiBarChart2 className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-serif font-semibold text-foreground text-sm">Model Comparison: {AGENT_CONFIG.enrichmentPrimary.name} vs {AGENT_CONFIG.enrichmentSecondary.name}</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Both models enriched the same companies in parallel. Compare results side-by-side, then select the model you prefer for this workflow.</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {campaign.enrichmentTimings?.primary != null && (
-              <InlineBadge variant="accent">{AGENT_CONFIG.enrichmentPrimary.name}: {(campaign.enrichmentTimings.primary / 1000).toFixed(1)}s</InlineBadge>
-            )}
-            {campaign.enrichmentTimings?.secondary != null && (
-              <InlineBadge variant="default">{AGENT_CONFIG.enrichmentSecondary.name}: {(campaign.enrichmentTimings.secondary / 1000).toFixed(1)}s</InlineBadge>
-            )}
-            <div className="flex-1" />
-            <div className="flex gap-2">
-              <button onClick={() => handleSelectModel('primary')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${preferredModel === 'primary' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
-                Use {AGENT_CONFIG.enrichmentPrimary.name}
-              </button>
-              <button onClick={() => handleSelectModel('secondary')} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${preferredModel === 'secondary' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/30 text-foreground hover:border-primary/50'}`}>
-                Use {AGENT_CONFIG.enrichmentSecondary.name}
-              </button>
-            </div>
-          </div>
-          {preferredModel && (
-            <p className="text-xs text-green-700 mt-2 flex items-center gap-1"><FiCheckCircle className="w-3 h-3" /> Selected <strong>{preferredModel === 'primary' ? AGENT_CONFIG.enrichmentPrimary.name : AGENT_CONFIG.enrichmentSecondary.name}</strong> as the enrichment source for contacts stage.</p>
-          )}
-        </div>
-      )}
-
-      {/* Summaries */}
-      {(campaign.enrichmentSummary || campaign.enrichmentSummarySecondary) && !hasComparison && (
+      {/* Summary */}
+      {campaign.enrichmentSummary && (
         <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
           <div className="flex items-start gap-2">
             <HiOutlineSparkles className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.enrichmentSummary || campaign.enrichmentSummarySecondary || '')}</div>
+            <div className="flex-1">
+              <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.enrichmentSummary)}</div>
+              {campaign.enrichmentTime != null && (
+                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1"><FiClock className="w-3 h-3" /> Enrichment completed in {(campaign.enrichmentTime / 1000).toFixed(1)}s (dual-model consolidation)</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1756,7 +1874,7 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
           <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3">
             <FiRefreshCw className="w-4 h-4 animate-spin" />
             {enrichmentProgress
-              ? `Deep research: ${enrichmentProgress.current} of ${enrichmentProgress.total} companies enriched (dual-model per company)`
+              ? `Deep research: ${enrichmentProgress.current} of ${enrichmentProgress.total} companies enriched`
               : 'Starting deep company research...'}
           </div>
           {enrichmentProgress && (
@@ -1776,49 +1894,45 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground mt-2">Each company is individually researched with targeted search queries for revenue, news, leadership, growth signals, and competitive intelligence.</p>
+              <p className="text-xs text-muted-foreground mt-2">Each company is researched with dual models for revenue, news, leadership, growth signals, competitive intel, risk/insurance challenges, HR challenges, and sales nuggets. Results are consolidated into a single truth.</p>
             </div>
           )}
           {!enrichmentProgress && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-3">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiDatabase className="w-3 h-3" /> {AGENT_CONFIG.enrichmentPrimary.name}</div>
-                {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
-              </div>
-              <div className="space-y-3">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiSearch className="w-3 h-3" /> {AGENT_CONFIG.enrichmentSecondary.name}</div>
-                {Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)}
-              </div>
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FiDatabase className="w-3 h-3" /> {AGENT_CONFIG.enrichment.name}</div>
+              {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
             </div>
           )}
         </div>
       )}
 
-      {!loading && !hasSingleResult && !error && (
+      {!loading && enrichedData.length === 0 && !error && (
         <div className="text-center py-16 bg-card rounded-lg border border-border/30">
           <FiDatabase className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">No enrichment data yet</h3>
-          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich. Both enrichment models will run in parallel for comparison.</p>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">Go back to the discovery stage and select companies to enrich. Both enrichment models run in parallel and results are consolidated into a single comprehensive profile per company.</p>
         </div>
       )}
 
-      {hasSingleResult && (
+      {enrichedData.length > 0 && (
         <>
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <span className="text-sm text-muted-foreground">{selectedCount} of {displayData.length} selected for contact finding</span>
+            <span className="text-sm text-muted-foreground">{selectedCount} of {enrichedData.length} selected for contact finding</span>
             <button onClick={onFindContacts} disabled={selectedCount === 0 || loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
               <FiUsers className="w-4 h-4" /> Find Contacts ({selectedCount})
             </button>
           </div>
 
           <div className="space-y-3">
-            {displayData.map(ec => {
+            {enrichedData.map(ec => {
               const isExpanded = expandedCompany === ec.company_name
-              const secondaryMatch = findSecondaryMatch(ec.company_name)
               const newsCount = Array.isArray(ec.recent_news) ? ec.recent_news.length : 0
               const csuiteCount = Array.isArray(ec.csuite_changes) ? ec.csuite_changes.length : 0
               const growthCount = Array.isArray(ec.growth_indicators) ? ec.growth_indicators.length : 0
-              const secondaryNewsCount = secondaryMatch ? (Array.isArray(secondaryMatch.recent_news) ? secondaryMatch.recent_news.length : 0) : 0
+              const riskCount = Array.isArray(ec.risk_insurance_challenges) ? ec.risk_insurance_challenges.length : 0
+              const hrCount = Array.isArray(ec.hr_workforce_challenges) ? ec.hr_workforce_challenges.length : 0
+              const nuggetCount = Array.isArray(ec.key_sales_nuggets) ? ec.key_sales_nuggets.length : 0
+              const salesIntelCount = riskCount + hrCount + nuggetCount
 
               return (
                 <div key={ec.company_name} className={`bg-card rounded-lg border transition-all ${ec.selected ? 'border-primary/40 shadow-md' : 'border-border/30'}`}>
@@ -1833,15 +1947,12 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-serif font-semibold text-foreground">{ec.company_name}</h3>
                         {ec.revenue?.figure && <InlineBadge variant="accent"><FiDollarSign className="w-3 h-3 mr-0.5" />{ec.revenue.figure}</InlineBadge>}
-                        {secondaryMatch?.revenue?.figure && secondaryMatch.revenue.figure !== ec.revenue?.figure && (
-                          <InlineBadge variant="default"><FiDollarSign className="w-3 h-3 mr-0.5" />{secondaryMatch.revenue.figure} (B)</InlineBadge>
-                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {newsCount > 0 && <InlineBadge variant="muted">{newsCount} news (A)</InlineBadge>}
-                        {secondaryNewsCount > 0 && <InlineBadge variant="muted">{secondaryNewsCount} news (B)</InlineBadge>}
+                        {newsCount > 0 && <InlineBadge variant="muted"><FiFlag className="w-3 h-3 mr-0.5" />{newsCount} news</InlineBadge>}
                         {csuiteCount > 0 && <InlineBadge variant="warning">{csuiteCount} C-suite</InlineBadge>}
                         {growthCount > 0 && <InlineBadge variant="success"><FiTrendingUp className="w-3 h-3 mr-0.5" />{growthCount} growth</InlineBadge>}
+                        {salesIntelCount > 0 && <InlineBadge variant="accent"><FiTarget className="w-3 h-3 mr-0.5" />{salesIntelCount} sales intel</InlineBadge>}
                       </div>
                     </div>
                     <div className="flex-shrink-0">
@@ -1851,18 +1962,7 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
 
                   {isExpanded && (
                     <div className="border-t border-border/20 pt-4 px-4 pb-4">
-                      {hasComparison && secondaryMatch ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                          <div className="border border-amber-200/50 rounded-lg p-3 bg-amber-50/20">
-                            <EnrichmentDetailPanel ec={ec} label={AGENT_CONFIG.enrichmentPrimary.name} />
-                          </div>
-                          <div className="border border-blue-200/50 rounded-lg p-3 bg-blue-50/20">
-                            <EnrichmentDetailPanel ec={secondaryMatch} label={AGENT_CONFIG.enrichmentSecondary.name} />
-                          </div>
-                        </div>
-                      ) : (
-                        <EnrichmentDetailPanel ec={ec} label={primaryData.length > 0 ? AGENT_CONFIG.enrichmentPrimary.name : AGENT_CONFIG.enrichmentSecondary.name} />
-                      )}
+                      <EnrichmentDetailPanel ec={ec} />
                     </div>
                   )}
                 </div>
@@ -2397,18 +2497,74 @@ ${truncatedFindings}`
       ? parsed.enriched_companies.map((ec: any) => ({
           company_name: ec?.company_name ?? '',
           revenue: { figure: ec?.revenue?.figure ?? 'N/A', year: ec?.revenue?.year ?? '', source: ec?.revenue?.source ?? '' },
-          recent_news: Array.isArray(ec?.recent_news) ? ec.recent_news.map((n: any) => ({ date: n?.date ?? '', headline: n?.headline ?? '', summary: n?.summary ?? '' })) : [],
+          recent_news: Array.isArray(ec?.recent_news) ? ec.recent_news.map((n: any) => ({ date: n?.date ?? '', headline: n?.headline ?? '', summary: n?.summary ?? '', sales_relevance: n?.sales_relevance ?? '' })) : [],
           csuite_changes: Array.isArray(ec?.csuite_changes) ? ec.csuite_changes.map((cs: any) => ({ name: cs?.name ?? '', new_role: cs?.new_role ?? '', previous_role: cs?.previous_role ?? '', date: cs?.date ?? '' })) : [],
-          growth_indicators: Array.isArray(ec?.growth_indicators) ? ec.growth_indicators.map((gi: any) => ({ type: gi?.type ?? '', detail: gi?.detail ?? '' })) : [],
+          growth_indicators: Array.isArray(ec?.growth_indicators) ? ec.growth_indicators.map((gi: any) => ({ type: gi?.type ?? '', detail: gi?.detail ?? '', implications: gi?.implications ?? '' })) : [],
           competitive_intel: {
             vendors: Array.isArray(ec?.competitive_intel?.vendors) ? ec.competitive_intel.vendors : [],
             partners: Array.isArray(ec?.competitive_intel?.partners) ? ec.competitive_intel.partners : [],
             competitors: Array.isArray(ec?.competitive_intel?.competitors) ? ec.competitive_intel.competitors : [],
           },
+          risk_insurance_challenges: Array.isArray(ec?.risk_insurance_challenges) ? ec.risk_insurance_challenges.map((rc: any) => ({ challenge: rc?.challenge ?? '', trigger_event: rc?.trigger_event ?? '', urgency: rc?.urgency ?? '', relevant_service: rc?.relevant_service ?? '', service_provider: rc?.service_provider ?? '', conversation_opener: rc?.conversation_opener ?? '' })) : [],
+          hr_workforce_challenges: Array.isArray(ec?.hr_workforce_challenges) ? ec.hr_workforce_challenges.map((hc: any) => ({ challenge: hc?.challenge ?? '', trigger_event: hc?.trigger_event ?? '', urgency: hc?.urgency ?? '', relevant_service: hc?.relevant_service ?? '', service_provider: hc?.service_provider ?? '', conversation_opener: hc?.conversation_opener ?? '' })) : [],
+          key_sales_nuggets: Array.isArray(ec?.key_sales_nuggets) ? ec.key_sales_nuggets.map((sn: any) => ({ nugget: sn?.nugget ?? '', category: sn?.category ?? '', source: sn?.source ?? '', talking_point: sn?.talking_point ?? '' })) : [],
           selected: true,
         }))
       : []
   }
+
+  // ─ Consolidate two enrichment results into a single truth ─
+  const consolidateEnrichment = useCallback((primary: EnrichedCompany | null, secondary: EnrichedCompany | null): EnrichedCompany | null => {
+    if (!primary && !secondary) return null
+    if (!primary) return secondary
+    if (!secondary) return primary
+
+    // Helper: deduplicate arrays by a key field
+    const dedupeBy = <T extends Record<string, any>>(arr: T[], key: keyof T): T[] => {
+      const seen = new Set<string>()
+      return arr.filter(item => {
+        const val = String(item[key] ?? '').toLowerCase().trim()
+        if (!val || seen.has(val)) return false
+        seen.add(val)
+        return true
+      })
+    }
+
+    // Helper: merge string arrays and deduplicate
+    const mergeStringArrays = (...arrays: (string[] | undefined)[]): string[] => {
+      const combined = arrays.flat().filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      return Array.from(new Set(combined.map(s => s.trim())))
+    }
+
+    // Revenue: prefer whichever has a non-N/A figure, prefer more recent year
+    const pickRevenue = (): Revenue => {
+      const pFig = primary.revenue?.figure ?? 'N/A'
+      const sFig = secondary.revenue?.figure ?? 'N/A'
+      if (pFig === 'N/A' && sFig !== 'N/A') return secondary.revenue
+      if (sFig === 'N/A' && pFig !== 'N/A') return primary.revenue
+      // Both have figures — prefer more recent year
+      const pYear = parseInt(primary.revenue?.year ?? '0')
+      const sYear = parseInt(secondary.revenue?.year ?? '0')
+      return sYear > pYear ? secondary.revenue : primary.revenue
+    }
+
+    return {
+      company_name: primary.company_name,
+      revenue: pickRevenue(),
+      recent_news: dedupeBy([...primary.recent_news, ...secondary.recent_news], 'headline').slice(0, 10),
+      csuite_changes: dedupeBy([...primary.csuite_changes, ...secondary.csuite_changes], 'name'),
+      growth_indicators: dedupeBy([...primary.growth_indicators, ...secondary.growth_indicators], 'detail'),
+      competitive_intel: {
+        vendors: mergeStringArrays(primary.competitive_intel?.vendors, secondary.competitive_intel?.vendors),
+        partners: mergeStringArrays(primary.competitive_intel?.partners, secondary.competitive_intel?.partners),
+        competitors: mergeStringArrays(primary.competitive_intel?.competitors, secondary.competitive_intel?.competitors),
+      },
+      risk_insurance_challenges: dedupeBy([...primary.risk_insurance_challenges, ...secondary.risk_insurance_challenges], 'challenge'),
+      hr_workforce_challenges: dedupeBy([...primary.hr_workforce_challenges, ...secondary.hr_workforce_challenges], 'challenge'),
+      key_sales_nuggets: dedupeBy([...primary.key_sales_nuggets, ...secondary.key_sales_nuggets], 'nugget'),
+      selected: true,
+    }
+  }, [])
 
   // Build focused, contextual enrichment prompt using campaign directive + company specifics
   const buildEnrichmentPrompt = useCallback((company: Company, campaign: Campaign): string => {
@@ -2519,14 +2675,36 @@ Execute these SPECIFIC search queries — do not use generic searches. Each quer
    Search: ${competitorTerms}
    Map: (a) direct competitors in ${industry}${geography ? ` specifically in ${geography}` : ''}, (b) technology/infrastructure vendors they rely on, (c) channel/strategic partners, (d) any vendor ecosystem or marketplace participation.
 
+6. RISK & INSURANCE CHALLENGES
+   Search: "${name} insurance claim", "${name} regulatory compliance ${year}", "${name} cyber breach", "${name} ESG risk", "${name} litigation ${year}", "${name} property damage", "${name} supply chain disruption"
+   Identify challenges a risk consulting/insurance brokerage firm (like WTW, Aon, or Marsh & McLennan) could help with:
+   - Property & casualty risk (facility damage, natural disaster exposure, supply chain)
+   - Cyber risk (data breaches, ransomware, IT infrastructure vulnerabilities)
+   - Regulatory & compliance risk (new regulations, fines, industry-specific compliance)
+   - M&A due diligence risk (integration, cultural, financial)
+   - ESG & climate risk (emissions targets, climate adaptation, sustainability reporting)
+   - Directors & officers liability (governance issues, shareholder activism)
+   For each challenge found, identify the specific WTW/Aon/Marsh service that addresses it and suggest a conversation opener.
+
+7. HR & WORKFORCE CHALLENGES
+   Search: "${name} hiring ${year}", "${name} layoffs", "${name} return to office", "${name} employee benefits", "${name} DEI diversity", "${name} compensation ${year}", "${name} talent acquisition", "${name} union labor"
+   Identify challenges a HR/benefits consulting firm (like Mercer, WTW, or Aon) could help with:
+   - Talent acquisition & retention (hiring difficulties, turnover, skills gaps)
+   - Employee benefits & wellbeing (healthcare costs, mental health, flexible work)
+   - Compensation strategy (pay equity, executive compensation, total rewards)
+   - Workforce transformation (restructuring, RTO policies, hybrid work)
+   - DEI & culture (diversity goals, inclusion programs, culture change)
+   - Retirement & pension (plan design, funding, regulatory compliance)
+   For each challenge found, identify the specific Mercer/WTW/Aon service and suggest a conversation opener.
+
 Return structured JSON for this ONE company with specific, sourced data. No generic statements — include dollar amounts, dates, names, percentages, and MW/capacity figures where applicable.`
   }, [])
 
-  // Enrich a single company with both models in parallel
+  // Enrich a single company with both models in parallel, then consolidate
   const enrichSingleCompany = useCallback(async (
     company: Company,
     campaign: Campaign,
-    onComplete: (name: string, primary: EnrichedCompany | null, secondary: EnrichedCompany | null) => void
+    onComplete: (name: string, consolidated: EnrichedCompany | null) => void
   ) => {
     const message = buildEnrichmentPrompt(company, campaign)
     const start = Date.now()
@@ -2556,10 +2734,11 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
       }
     }
 
-    console.log(`[enrichSingleCompany] ${company.name}: Primary=${primaryCompany ? 'OK' : 'FAIL'}, Secondary=${secondaryCompany ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
-    onComplete(company.name, primaryCompany, secondaryCompany)
-    return { name: company.name, primary: primaryCompany, secondary: secondaryCompany, elapsed }
-  }, [buildEnrichmentPrompt])
+    const consolidated = consolidateEnrichment(primaryCompany, secondaryCompany)
+    console.log(`[enrichSingleCompany] ${company.name}: Primary=${primaryCompany ? 'OK' : 'FAIL'}, Secondary=${secondaryCompany ? 'OK' : 'FAIL'}, Consolidated=${consolidated ? 'OK' : 'FAIL'} (${(elapsed / 1000).toFixed(1)}s)`)
+    onComplete(company.name, consolidated)
+    return { name: company.name, consolidated, elapsed }
+  }, [buildEnrichmentPrompt, consolidateEnrichment])
 
   const runEnrichment = useCallback(async (campaign: Campaign) => {
     const selected = (campaign.companies ?? []).filter(c => c.selected)
@@ -2568,52 +2747,43 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
     setError(null)
     setActiveAgentId(ENRICHMENT_PRIMARY_ID)
 
-    const primaryResults: EnrichedCompany[] = []
-    const secondaryResults: EnrichedCompany[] = []
+    const consolidatedResults: EnrichedCompany[] = []
     let totalTime = 0
 
     setEnrichmentProgress({ current: 0, total: selected.length, completed: [] })
 
     try {
-      // Run companies in parallel with concurrency limit of 4
       const CONCURRENCY = 4
       const queue = [...selected]
       const active: Promise<any>[] = []
       let completedCount = 0
 
       const processCompany = (company: Company) => {
-        return enrichSingleCompany(company, campaign, (name, primary, secondary) => {
+        return enrichSingleCompany(company, campaign, (name, consolidated) => {
           completedCount++
-          if (primary) primaryResults.push(primary)
-          if (secondary) secondaryResults.push(secondary)
+          if (consolidated) consolidatedResults.push(consolidated)
 
           setEnrichmentProgress({
             current: completedCount,
             total: selected.length,
-            completed: [...primaryResults.map(g => g.company_name)],
+            completed: [...consolidatedResults.map(c => c.company_name)],
           })
 
-          // Toggle active agent indicator
           setActiveAgentId(completedCount % 2 === 0 ? ENRICHMENT_PRIMARY_ID : ENRICHMENT_SECONDARY_ID)
 
-          // Progressive update — show results as they arrive
           updateCampaign({
             ...campaign,
-            enrichedCompanies: [...primaryResults],
-            enrichedCompaniesSecondary: [...secondaryResults],
+            enrichedCompanies: [...consolidatedResults],
             stage: 'enrichment',
-            enrichmentSummary: `Enriched ${primaryResults.length} of ${selected.length} companies via ${AGENT_CONFIG.enrichmentPrimary.name}.`,
-            enrichmentSummarySecondary: `Enriched ${secondaryResults.length} of ${selected.length} companies via ${AGENT_CONFIG.enrichmentSecondary.name}.`,
-            enrichmentTimings: { primary: totalTime, secondary: totalTime },
+            enrichmentSummary: `Enriched ${consolidatedResults.length} of ${selected.length} companies via ${AGENT_CONFIG.enrichment.name}.`,
+            enrichmentTime: totalTime,
             updatedAt: new Date().toISOString(),
           })
         })
       }
 
-      // Process with controlled concurrency
       const results: { name: string; elapsed: number }[] = []
       while (queue.length > 0 || active.length > 0) {
-        // Fill up to concurrency limit
         while (active.length < CONCURRENCY && queue.length > 0) {
           const company = queue.shift()!
           const promise = processCompany(company).then(r => {
@@ -2623,29 +2793,25 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
           })
           active.push(promise)
         }
-        // Wait for at least one to finish
         if (active.length > 0) {
           await Promise.race(active)
         }
       }
 
-      if (primaryResults.length === 0 && secondaryResults.length === 0) {
-        setError('Both enrichment models failed to return results. Please try again.')
+      if (consolidatedResults.length === 0) {
+        setError('Enrichment models failed to return results. Please try again.')
       }
 
-      // Final update with complete data
       updateCampaign({
         ...campaign,
-        enrichedCompanies: primaryResults,
-        enrichedCompaniesSecondary: secondaryResults,
+        enrichedCompanies: consolidatedResults,
         stage: 'enrichment',
-        enrichmentSummary: `Enriched ${primaryResults.length} companies with revenue, news, leadership, growth signals, and competitive intelligence via ${AGENT_CONFIG.enrichmentPrimary.name}.`,
-        enrichmentSummarySecondary: `Enriched ${secondaryResults.length} companies via ${AGENT_CONFIG.enrichmentSecondary.name} for comparison.`,
-        enrichmentTimings: { primary: totalTime, secondary: totalTime },
+        enrichmentSummary: `Enriched ${consolidatedResults.length} companies with revenue, news, leadership, growth signals, competitive intelligence, risk/insurance challenges, HR challenges, and sales nuggets via ${AGENT_CONFIG.enrichment.name}.`,
+        enrichmentTime: totalTime,
         updatedAt: new Date().toISOString(),
       })
 
-      console.log(`[runEnrichment] Complete: ${primaryResults.length} Primary, ${secondaryResults.length} Secondary. Total time: ${(totalTime / 1000).toFixed(1)}s across ${selected.length} companies`)
+      console.log(`[runEnrichment] Complete: ${consolidatedResults.length} consolidated companies. Total time: ${(totalTime / 1000).toFixed(1)}s across ${selected.length} companies`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrichment failed. Please try again.')
     }
