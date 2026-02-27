@@ -2735,8 +2735,8 @@ IMPORTANT:
 
     try {
       // Each company calls 4 sub-agents directly in parallel (flat calls, not manager-chained),
-      // so we can run 4 companies concurrently for maximum throughput
-      const CONCURRENCY = 4
+      // so we can run 5 companies concurrently for maximum throughput
+      const CONCURRENCY = 5
       const queue = [...selected]
       const active: Promise<any>[] = []
       let completedCount = 0
