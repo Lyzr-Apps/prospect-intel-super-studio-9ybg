@@ -1826,7 +1826,7 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
   error: string | null
   onRetry: () => void
   onFindContacts: () => void
-  enrichmentProgress?: { current: number; total: number; completed: string[] } | null
+  enrichmentProgress?: { current: number; total: number; completed: string[]; inFlight?: string[] } | null
 }) {
   const enrichedData = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
@@ -1874,13 +1874,19 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
           <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3">
             <FiRefreshCw className="w-4 h-4 animate-spin" />
             {enrichmentProgress
-              ? `Deep research: ${enrichmentProgress.current} of ${enrichmentProgress.total} companies enriched`
+              ? `Deep research: ${enrichmentProgress.current} of ${enrichmentProgress.total} enriched${(enrichmentProgress.inFlight?.length ?? 0) > 0 ? ` | ${enrichmentProgress.inFlight!.length} in progress` : ''}`
               : 'Starting deep company research...'}
           </div>
           {enrichmentProgress && (
             <div className="mb-4">
               <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden mb-3">
-                <div className="h-full rounded-full bg-primary transition-all duration-700 ease-out" style={{ width: `${Math.max((enrichmentProgress.current / Math.max(enrichmentProgress.total, 1)) * 100, 3)}%` }} />
+                {/* Progress bar: completed portion solid, in-flight portion striped/animated */}
+                <div className="h-full flex">
+                  <div className="h-full rounded-l-full bg-primary transition-all duration-700 ease-out" style={{ width: `${Math.max((enrichmentProgress.current / Math.max(enrichmentProgress.total, 1)) * 100, 2)}%` }} />
+                  {(enrichmentProgress.inFlight?.length ?? 0) > 0 && (
+                    <div className="h-full bg-primary/40 animate-pulse transition-all duration-500" style={{ width: `${((enrichmentProgress.inFlight?.length ?? 0) / Math.max(enrichmentProgress.total, 1)) * 100}%` }} />
+                  )}
+                </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {enrichmentProgress.completed.map((name, i) => (
@@ -1888,13 +1894,22 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
                     <FiCheckCircle className="w-3 h-3" /> {name}
                   </span>
                 ))}
-                {enrichmentProgress.current < enrichmentProgress.total && (
+                {Array.isArray(enrichmentProgress.inFlight) && enrichmentProgress.inFlight.map((name, i) => (
+                  <span key={`inflight-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
+                    <FiRefreshCw className="w-3 h-3 animate-spin" /> {name}
+                  </span>
+                ))}
+                {enrichmentProgress.current < enrichmentProgress.total && (enrichmentProgress.inFlight?.length ?? 0) === 0 && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary animate-pulse">
-                    <FiRefreshCw className="w-3 h-3 animate-spin" /> Researching...
+                    <FiRefreshCw className="w-3 h-3 animate-spin" /> Queuing...
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground mt-2">Each company is researched with dual models for revenue, news, leadership, growth signals, competitive intel, risk/insurance challenges, HR challenges, and sales nuggets. Results are consolidated into a single truth.</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                {(enrichmentProgress.inFlight?.length ?? 0) > 1
+                  ? `${enrichmentProgress.inFlight!.length} companies researching in parallel with dual models. Results are consolidated into a single truth per company.`
+                  : 'Each company is researched with dual models for revenue, news, leadership, growth signals, competitive intel, risk/insurance challenges, HR challenges, and sales nuggets. Results are consolidated into a single truth.'}
+              </p>
             </div>
           )}
           {!enrichmentProgress && (
@@ -2153,7 +2168,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null)
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
-  const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; completed: string[] } | null>(null)
+  const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; completed: string[]; inFlight?: string[] } | null>(null)
 
   useEffect(() => {
     const stored = loadCampaigns()
@@ -2725,12 +2740,11 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
     const message = buildEnrichmentPrompt(company, campaign)
     const start = Date.now()
 
-    // Stagger the two model calls by 500ms to avoid connection pile-up
-    const primaryPromise = callWithRetry(message, ENRICHMENT_PRIMARY_ID)
-    await new Promise(r => setTimeout(r, 500))
-    const secondaryPromise = callWithRetry(message, ENRICHMENT_SECONDARY_ID)
-
-    const [primaryResult, secondaryResult] = await Promise.allSettled([primaryPromise, secondaryPromise])
+    // Fire both models truly in parallel — no stagger needed with retry logic in place
+    const [primaryResult, secondaryResult] = await Promise.allSettled([
+      callWithRetry(message, ENRICHMENT_PRIMARY_ID),
+      callWithRetry(message, ENRICHMENT_SECONDARY_ID),
+    ])
     const elapsed = Date.now() - start
 
     let primaryCompany: EnrichedCompany | null = null
@@ -2768,23 +2782,29 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
     const consolidatedResults: EnrichedCompany[] = []
     let totalTime = 0
 
-    setEnrichmentProgress({ current: 0, total: selected.length, completed: [] })
+    setEnrichmentProgress({ current: 0, total: selected.length, completed: [], inFlight: [] })
 
     try {
-      const CONCURRENCY = 2
+      const CONCURRENCY = 4
       const queue = [...selected]
       const active: Promise<any>[] = []
       let completedCount = 0
+      const inFlightNames: string[] = []
 
       const processCompany = (company: Company) => {
+        inFlightNames.push(company.name)
         return enrichSingleCompany(company, campaign, (name, consolidated) => {
           completedCount++
           if (consolidated) consolidatedResults.push(consolidated)
+          // Remove from in-flight
+          const idx = inFlightNames.indexOf(name)
+          if (idx >= 0) inFlightNames.splice(idx, 1)
 
           setEnrichmentProgress({
             current: completedCount,
             total: selected.length,
             completed: [...consolidatedResults.map(c => c.company_name)],
+            inFlight: [...inFlightNames],
           })
 
           setActiveAgentId(completedCount % 2 === 0 ? ENRICHMENT_PRIMARY_ID : ENRICHMENT_SECONDARY_ID)
@@ -2804,8 +2824,6 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
       while (queue.length > 0 || active.length > 0) {
         while (active.length < CONCURRENCY && queue.length > 0) {
           const company = queue.shift()!
-          // Stagger launches by 1s to avoid overwhelming browser connection pool
-          if (active.length > 0) await new Promise(r => setTimeout(r, 1000))
           const promise = processCompany(company).then(r => {
             results.push({ name: r.name, elapsed: r.elapsed })
             totalTime += r.elapsed
@@ -2813,6 +2831,13 @@ Return structured JSON for this ONE company with specific, sourced data. No gene
           })
           active.push(promise)
         }
+        // Update progress to show in-flight companies
+        setEnrichmentProgress({
+          current: completedCount,
+          total: selected.length,
+          completed: [...consolidatedResults.map(c => c.company_name)],
+          inFlight: [...inFlightNames],
+        })
         if (active.length > 0) {
           await Promise.race(active)
         }
