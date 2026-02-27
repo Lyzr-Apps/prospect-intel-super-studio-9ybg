@@ -2543,71 +2543,201 @@ ${truncatedFindings}`
     const directive = campaign.directive || ''
     const geography = campaign.filters?.geography || ''
     const targetIndustries = campaign.filters?.industries?.join(', ') || industry
+    const todayDate = new Date().toISOString().split('T')[0]
 
-    return `Company: "${name}" — a ${industry} company${location ? ` headquartered in ${location}` : ''}${size ? ` with approximately ${size} employees` : ''}.
+    return `TODAY'S DATE: ${todayDate}
+RESEARCH TIMEFRAME: Focus on events, data, and developments from the last 12 months (since ${new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}). Prioritize the most recent information available.
+
+Company: "${name}" — a ${industry} company${location ? ` headquartered in ${location}` : ''}${size ? ` with approximately ${size} employees` : ''}.
 CAMPAIGN CONTEXT: ${directive || `Research ${industry} companies`}
 ${geography ? `TARGET GEOGRAPHY: ${geography}` : ''}
 ${targetIndustries ? `TARGET INDUSTRIES: ${targetIndustries}` : ''}
 ${segment ? `DISCOVERY SEGMENT: ${segment}` : ''}
-${website ? `COMPANY WEBSITE: ${website}` : ''}`
+${website ? `COMPANY WEBSITE: ${website}` : ''}
+
+SOURCE VALIDATION RULES:
+- Tier 1 (Highest): Official SEC filings, annual reports, press releases from the company itself
+- Tier 2: Reputable business news (Reuters, Bloomberg, WSJ, TechCrunch, industry-specific publications)
+- Tier 3: Industry analyst reports (Gartner, Forrester, IDC, CB Insights)
+- Tier 4: Verified databases (Crunchbase, PitchBook, LinkedIn, Glassdoor)
+- EXCLUDE: Wikipedia, unattributed blog posts, outdated sources (>18 months old unless historically significant), social media rumors
+- Every data point MUST include its source and date. If a date cannot be determined, mark it as "Date unknown".
+- Flag any data older than 12 months with "(Historical)" prefix.`
   }, [])
 
   // 4 specialized prompts — one per sub-agent workstream
   const buildFinancialGrowthPrompt = useCallback((company: Company, campaign: Campaign): string => {
     return `${buildCompanyContext(company, campaign)}
 
+ROLE: You are a senior financial research analyst specializing in company intelligence for B2B sales teams. Your research must be precise, sourced, and actionable.
+
 Research FINANCIAL & GROWTH data for "${company.name}":
-1. Revenue figures — annual revenue, ARR, or estimated revenue with year and source
-2. Funding rounds — recent investments, Series rounds, valuations
-3. Growth indicators — hiring surges, office expansions, new product launches, market expansion signals
+
+1. REVENUE & FINANCIAL POSITION
+   - Annual revenue, ARR, or estimated revenue with fiscal year and source
+   - Revenue growth rate (YoY if available)
+   - Recent funding rounds: amount, lead investors, valuation, date
+   - Profitability indicators (if public or reported)
+   - Citation format: (Source Type, "Title/Publication", YYYY-MM-DD)
+
+2. GROWTH INDICATORS (last 12 months only)
+   - Hiring surges: number of open positions, departments expanding, job posting trends
+   - Office/geographic expansion: new offices, market entries, international expansion
+   - Product launches: new products, major feature releases, platform expansions
+   - Market expansion: new verticals, customer segments, channel partnerships
+   - M&A activity: acquisitions, mergers, strategic investments
+   - For each indicator, explain the SALES IMPLICATION — what does this signal mean for someone selling to this company?
+
+QUALITY REQUIREMENTS:
+- Every figure must include year/date and source citation
+- Distinguish between confirmed revenue (from filings/press) vs estimated revenue (from databases/analysts)
+- If no reliable revenue data exists, state "Revenue undisclosed" rather than guessing
+- Growth indicators must reference specific, verifiable events — not generic industry trends
 
 Return a JSON object with these fields:
 - "company_name": string
 - "revenue": { "figure": string, "year": string, "source": string }
-- "growth_indicators": [{ "type": string, "detail": string, "implications": string }]
-
-All data must be specific, sourced, and include dates/amounts where applicable. Do NOT include generic findings.`
+- "growth_indicators": [{ "type": string, "detail": string, "implications": string }]`
   }, [buildCompanyContext])
 
   const buildNewsLeadershipPrompt = useCallback((company: Company, campaign: Campaign): string => {
+    const todayDate = new Date().toISOString().split('T')[0]
     return `${buildCompanyContext(company, campaign)}
 
+ROLE: You are a senior business intelligence analyst specializing in corporate news monitoring and leadership tracking for B2B sales teams.
+
 Research NEWS & LEADERSHIP data for "${company.name}":
-1. Recent news — press releases, product launches, partnerships, acquisitions from the last 12 months
-2. C-suite changes — new hires, departures, role changes at VP level and above
-3. For each news item, assess its relevance for sales outreach
+
+1. RECENT NEWS & DEVELOPMENTS (last 12 months, prioritize last 6 months)
+   Search for the MOST RECENT news available up to ${todayDate}. Categories to cover:
+   - Press releases and company announcements
+   - Product launches, major feature releases, platform updates
+   - Partnerships, alliances, channel agreements
+   - Acquisitions, mergers, divestitures
+   - Regulatory actions, compliance events, legal proceedings
+   - Awards, recognitions, industry rankings
+   - Earnings reports, financial milestones (if public)
+
+   For EACH news item:
+   - Include the EXACT publication date (YYYY-MM-DD format)
+   - Cite the source publication name
+   - Assess sales_relevance: Why does this matter to someone selling B2B services to this company? What conversation does it open?
+
+   RECENCY REQUIREMENT: Prioritize news from the last 3-6 months. If only older news is available, include it but flag with the actual date. Do NOT fabricate recent dates for old news.
+
+2. C-SUITE & LEADERSHIP CHANGES (last 18 months)
+   - New hires at VP level and above: name, new role, previous company/role, date
+   - Departures: who left, their role, approximate date
+   - Role changes: promotions, lateral moves, expanded responsibilities
+   - Board appointments or advisory roles
+
+   SALES INSIGHT: New executives typically review vendor relationships within their first 90 days. Flag any changes in the last 6 months as "Active Review Window".
+
+QUALITY REQUIREMENTS:
+- Dates must be specific (YYYY-MM-DD), not vague ("recently", "this year")
+- Every news item must be traceable to a real publication
+- Do NOT include speculation or unconfirmed rumors
+- If the company has very little recent news, say so — do not pad with irrelevant industry news
 
 Return a JSON object with these fields:
 - "company_name": string
 - "recent_news": [{ "date": string, "headline": string, "summary": string, "sales_relevance": string }]
-- "csuite_changes": [{ "name": string, "new_role": string, "previous_role": string, "date": string }]
-
-All data must be specific, sourced, and include dates where applicable.`
+- "csuite_changes": [{ "name": string, "new_role": string, "previous_role": string, "date": string }]`
   }, [buildCompanyContext])
 
   const buildCompetitiveIntelPrompt = useCallback((company: Company, campaign: Campaign): string => {
     return `${buildCompanyContext(company, campaign)}
 
+ROLE: You are a competitive intelligence analyst specializing in technology ecosystem mapping and market positioning analysis for B2B sales teams.
+
 Research COMPETITIVE & MARKET INTELLIGENCE for "${company.name}":
-1. Technology vendors — what major platforms, tools, or services does this company use?
-2. Strategic partners — consulting firms, system integrators, channel partners
-3. Direct competitors — companies competing in the same market segments
+
+1. TECHNOLOGY VENDORS & PLATFORMS
+   What major technology platforms, tools, or services does this company use or depend on?
+   - Cloud infrastructure (AWS, Azure, GCP, etc.)
+   - Enterprise software (Salesforce, SAP, Oracle, Workday, etc.)
+   - Development tools and platforms
+   - Security solutions
+   - Data & analytics platforms
+   Sources: Job postings (tech stack requirements), case studies, press releases, technology review sites, partnership announcements
+
+2. STRATEGIC PARTNERS
+   - Consulting firms and system integrators working with this company
+   - Channel partners and resellers
+   - Technology alliance partners
+   - Joint venture or co-development partners
+   Sources: Partner directory listings, joint press releases, case studies, conference presentations
+
+3. DIRECT COMPETITORS
+   - Companies competing in the same primary market segments
+   - Emerging competitors or disruptors
+   - Companies this company has explicitly referenced as competitors (in earnings calls, press, etc.)
+   NOTE: Only include VERIFIED competitive relationships — companies that actually compete for the same customers. Do NOT list generic industry players.
+
+QUALITY REQUIREMENTS:
+- Each vendor/partner/competitor must be a SPECIFIC named company, not a category
+- Distinguish between confirmed relationships (from press releases, case studies) and inferred relationships (from job postings, tech stack analysis)
+- If competitive intelligence is limited for this company, return shorter but accurate lists rather than padding with guesses
 
 Return a JSON object with these fields:
 - "company_name": string
-- "competitive_intel": { "vendors": [string], "partners": [string], "competitors": [string] }
-
-All data must be specific and sourced. Do NOT include generic industry competitors — only verified competitive relationships.`
+- "competitive_intel": { "vendors": [string], "partners": [string], "competitors": [string] }`
   }, [buildCompanyContext])
 
   const buildRiskWorkforcePrompt = useCallback((company: Company, campaign: Campaign): string => {
     return `${buildCompanyContext(company, campaign)}
 
+ROLE: You are a senior risk & workforce analyst specializing in identifying actionable business challenges and sales opportunities for B2B advisory services. You synthesize intelligence into a "Strategic Dialogue Matrix" format.
+
 Research RISK, INSURANCE, HR & WORKFORCE challenges for "${company.name}", plus synthesize KEY SALES NUGGETS:
 
-1. Risk & Insurance Challenges — regulatory risks, compliance gaps, cyber exposure, D&O liability, international expansion risks. Each challenge should have a specific trigger event from real company activity.
-2. HR & Workforce Challenges — talent acquisition difficulties, retention issues, benefits gaps, compensation pressures, workforce planning needs. Each should tie to real company activity.
-3. Key Sales Nuggets — the most compelling conversation starters combining financial, news, leadership, and competitive data into actionable sales talking points.
+1. STRATEGIC RISK DIALOGUE MATRIX
+   Identify risk & insurance challenges tied to REAL company events. For each challenge:
+   - Challenge: The specific risk exposure or compliance gap (be precise, not generic)
+   - Trigger Event: The REAL, verifiable company event that created or amplified this risk (with date)
+   - Urgency: High (immediate action needed) | Medium (next 6 months) | Low (strategic planning)
+   - Relevant Service: The type of advisory/insurance service that addresses this (e.g., "Cyber Liability Insurance", "D&O Coverage Review", "Global Compliance Assessment")
+   - Conversation Opener: A specific, non-salesy question that demonstrates knowledge of the company's situation and opens a consultative dialogue
+
+   Categories to assess:
+   - Cyber risk & data privacy exposure
+   - D&O liability (especially post-funding or IPO trajectory)
+   - International expansion regulatory compliance
+   - Supply chain / vendor concentration risk
+   - Environmental, Social, Governance (ESG) obligations
+   - Professional liability / E&O exposure
+   - Property & casualty considerations (new facilities, equipment)
+
+2. STRATEGIC BENEFITS & WORKFORCE DIALOGUE MATRIX
+   Identify HR & workforce challenges tied to REAL company events. For each:
+   - Challenge: The specific talent/benefits/workforce gap
+   - Trigger Event: The REAL company event driving this need (with date)
+   - Urgency: High | Medium | Low
+   - Relevant Service: The type of HR/benefits service (e.g., "Total Rewards Benchmarking", "Executive Benefits Design", "Workforce Planning")
+   - Conversation Opener: A consultative question demonstrating knowledge of their situation
+
+   Categories to assess:
+   - Talent acquisition & retention in competitive markets
+   - Executive compensation & benefits design
+   - Employee benefits program gaps (health, wellness, retirement)
+   - Workforce planning for growth/contraction
+   - DEI & culture initiatives
+   - Remote/hybrid work policy challenges
+   - Employee value proposition competitiveness
+
+3. KEY SALES NUGGETS
+   Synthesize the MOST compelling conversation starters — the "golden nuggets" that would make a sales professional stand out. Each nugget should:
+   - Reference a SPECIFIC, verifiable company event or data point
+   - Connect that event to a business need the prospect likely has
+   - Provide a natural talking point that opens a consultative conversation
+   - Category: classify as "Leadership Change", "Funding", "Expansion", "Regulatory", "Competitive Shift", "Market Signal", or "Workforce"
+
+QUALITY REQUIREMENTS:
+- Every trigger_event must reference a REAL, verifiable event with an approximate date
+- Do NOT invent or assume events that cannot be verified
+- Conversation openers must be specific to THIS company — not generic questions that could apply to any company
+- If you cannot find real trigger events for a category, omit it rather than fabricate
+- Prioritize challenges where the trigger event occurred in the last 6-12 months
 
 Return a JSON object with these fields:
 - "company_name": string
@@ -2615,11 +2745,10 @@ Return a JSON object with these fields:
 - "hr_workforce_challenges": [{ "challenge": string, "trigger_event": string, "urgency": "High"|"Medium"|"Low", "relevant_service": string, "service_provider": "", "conversation_opener": string }]
 - "key_sales_nuggets": [{ "nugget": string, "category": string, "source": string, "talking_point": string }]
 
-IMPORTANT:
-- The service_provider field MUST be empty string "" for ALL challenges
+CRITICAL RULES:
+- The service_provider field MUST be empty string "" for ALL challenges — never suggest specific firms
 - Do NOT include any specific consulting firm, brokerage, or service provider names
-- Focus on the company's operating space and industry-specific issues
-- All data must be specific, sourced, and tied to real events`
+- Focus on the company's operating space and industry-specific issues`
   }, [buildCompanyContext])
 
   // Call a single agent with retry logic for transient network failures
