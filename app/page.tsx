@@ -85,6 +85,17 @@ interface Company {
   discovery_category?: string
 }
 
+// Source provenance — tracks what each URL contributed to discovery
+interface DiscoverySource {
+  url: string
+  title: string
+  date_published: string
+  source_type: string
+  key_finding: string
+  companies_found: string[]
+  relevance_rationale: string
+}
+
 interface SegmentStrategy {
   segment_name: string
   target_count: number
@@ -219,13 +230,14 @@ interface Campaign {
   segmentationStrategy?: SegmentStrategy[]
   duplicatesRemoved?: number
   enrichmentTime?: number
+  discoverySources?: DiscoverySource[]
 }
 
 type AppView = 'dashboard' | 'campaign'
 type SidebarFilter = 'all' | 'in_progress' | 'completed'
 
 // ─── HELPER: parse agent result robustly ─────────────────────────────────────
-const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'revenue', 'growth_indicators', 'recent_news', 'csuite_changes', 'competitive_intel', 'risk_insurance_challenges', 'hr_workforce_challenges', 'key_sales_nuggets']
+const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'revenue', 'growth_indicators', 'recent_news', 'csuite_changes', 'competitive_intel', 'risk_insurance_challenges', 'hr_workforce_challenges', 'key_sales_nuggets', 'discovery_sources']
 
 function hasTargetKeys(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false
@@ -317,6 +329,56 @@ function parseAgentResult(result: AIAgentResponse): any {
 
   console.warn('[parseAgentResult] No parseable data found in agent response')
   return null
+}
+
+// ─── SOURCE PROVENANCE EXTRACTION ────────────────────────────────────────────
+function extractDiscoverySources(parsed: any, researchParsed?: any): DiscoverySource[] {
+  const sources: DiscoverySource[] = []
+  const seenUrls = new Set<string>()
+
+  const addSource = (s: any) => {
+    if (!s || typeof s !== 'object') return
+    const url = s?.url ?? s?.source_url ?? ''
+    if (!url || typeof url !== 'string' || !url.trim()) return
+    const normalized = url.trim().toLowerCase()
+    if (seenUrls.has(normalized)) return
+    seenUrls.add(normalized)
+    sources.push({
+      url: url.trim(),
+      title: s?.title ?? s?.source_title ?? '',
+      date_published: s?.date_published ?? s?.date ?? 'Unknown',
+      source_type: s?.source_type ?? 'other',
+      key_finding: s?.key_finding ?? s?.content ?? '',
+      companies_found: Array.isArray(s?.companies_found)
+        ? s.companies_found.filter((c: any) => typeof c === 'string' && c.trim())
+        : Array.isArray(s?.companies_mentioned)
+          ? s.companies_mentioned.filter((c: any) => typeof c === 'string' && c.trim())
+          : [],
+      relevance_rationale: s?.relevance_rationale ?? s?.relevance ?? '',
+    })
+  }
+
+  // Path 1: Explicit discovery_sources array from agent response
+  if (Array.isArray(parsed?.discovery_sources)) {
+    for (const s of parsed.discovery_sources) addSource(s)
+  }
+
+  // Path 2: Build from researcher findings if available
+  if (researchParsed && Array.isArray(researchParsed?.findings)) {
+    for (const f of researchParsed.findings) {
+      addSource({
+        url: f?.source_url ?? f?.url ?? '',
+        title: f?.source_title ?? '',
+        date_published: f?.date_published ?? 'Unknown',
+        source_type: f?.source_type ?? 'other',
+        key_finding: f?.content ?? '',
+        companies_found: Array.isArray(f?.companies_mentioned) ? f.companies_mentioned : [],
+        relevance_rationale: f?.relevance ?? '',
+      })
+    }
+  }
+
+  return sources
 }
 
 // ─── MARKDOWN RENDERER ───────────────────────────────────────────────────────
@@ -441,6 +503,62 @@ function getSampleCampaign(): Campaign {
     enrichmentSummary: 'Successfully enriched 2 companies with comprehensive revenue data, recent news, leadership changes, growth signals, and competitive landscape insights.',
     contactSummary: 'Identified 5 decision-maker contacts across 2 target companies, with 4 verified email addresses.',
     totalContactsFound: 5,
+    discoverySources: [
+      {
+        url: 'https://techcrunch.com/2024/11/15/datavault-series-c',
+        title: 'DataVault Technologies Raises $80M Series C to Accelerate Enterprise Analytics',
+        date_published: '2024-11-15',
+        source_type: 'news article',
+        key_finding: 'DataVault Technologies closed an $80M Series C round led by Sequoia Capital. The funding will accelerate their enterprise analytics platform and international expansion. Article also mentions competing analytics firms InsightFlow Analytics and ThoughtSpot as comparisons.',
+        companies_found: ['DataVault Technologies', 'InsightFlow Analytics'],
+        relevance_rationale: 'Funding announcement reveals high-growth data analytics company with enterprise focus and strong VC backing — directly matches the directive for enterprise SaaS in data analytics.',
+      },
+      {
+        url: 'https://defensenews.com/2024/12/cybershield-dod-contract',
+        title: 'CyberShield Solutions Wins $15M Multi-Year DoD Contract',
+        date_published: '2024-12-01',
+        source_type: 'press release',
+        key_finding: 'CyberShield Solutions secured a multi-year Department of Defense contract valued at $15M for endpoint security services. The contract validates their federal-grade cybersecurity capabilities and signals a transition from commercial to government markets.',
+        companies_found: ['CyberShield Solutions'],
+        relevance_rationale: 'Federal contract win demonstrates enterprise-grade capabilities and rapid growth in cybersecurity — a key target vertical per the directive.',
+      },
+      {
+        url: 'https://cloudcomputing-news.net/cloudnexus-2024-review',
+        title: '2024 Cloud Infrastructure Leaders: Platforms Reshaping Enterprise IT',
+        date_published: '2024-10-22',
+        source_type: 'industry report',
+        key_finding: 'Annual industry review identifying leading cloud orchestration platforms. CloudNexus Inc highlighted as managing 1000+ enterprise clients with strong partnerships across AWS, Azure, and GCP. Report also mentions 3 emerging competitors in the space.',
+        companies_found: ['CloudNexus Inc', 'DataVault Technologies'],
+        relevance_rationale: 'Industry analyst report provides authoritative ranking of cloud infrastructure leaders — directly addresses the cloud infrastructure criteria in the directive.',
+      },
+      {
+        url: 'https://saastr.com/insightflow-growth-story-2024',
+        title: 'From Startup to Scale: How InsightFlow Analytics Tripled Its Customer Base',
+        date_published: '2024-09-18',
+        source_type: 'market analysis',
+        key_finding: 'Deep dive into InsightFlow Analytics\' growth trajectory: tripled customer base in 12 months, 200% YoY ARR growth, AI-driven business intelligence platform targeting mid-market. Also references DataVault as an upstream data provider partner.',
+        companies_found: ['InsightFlow Analytics', 'DataVault Technologies'],
+        relevance_rationale: 'Growth case study reveals a rapidly scaling BI company in the data analytics space with strong mid-market traction — matches both the industry focus and growth signals criteria.',
+      },
+      {
+        url: 'https://businessinsider.com/datavault-analytics-growth-2024',
+        title: 'Enterprise Data Analytics Market Heats Up: Top Companies to Watch',
+        date_published: '2024-10-05',
+        source_type: 'news article',
+        key_finding: 'Market overview article covering the enterprise data analytics landscape. Features DataVault Technologies as a breakout company, mentions their new CRO Sarah Chen (ex-Snowflake), and lists CyberShield Solutions and CloudNexus Inc as companies in adjacent verticals benefiting from the same enterprise digitization trend.',
+        companies_found: ['DataVault Technologies', 'CyberShield Solutions', 'CloudNexus Inc', 'InsightFlow Analytics'],
+        relevance_rationale: 'Broad market analysis article identifying multiple companies across SaaS, analytics, and cybersecurity verticals — provides cross-cutting coverage of the directive\'s target sectors.',
+      },
+      {
+        url: 'https://crunchbase.com/organization/cybershield',
+        title: 'CyberShield Solutions - Company Profile & Funding History',
+        date_published: '2024-12-10',
+        source_type: 'company directory',
+        key_finding: 'Company profile showing Series B of $30M closed in Q3 2024, 320 employees, Austin TX headquarters. Competitive landscape includes CrowdStrike and SentinelOne. Company focused on endpoint security with expanding federal capabilities.',
+        companies_found: ['CyberShield Solutions'],
+        relevance_rationale: 'Verified company database providing funding history, headcount, and competitive positioning data — confirms company meets the 200-5000 employee size criteria.',
+      },
+    ],
   }
 }
 
@@ -1074,6 +1192,198 @@ function DiscoveryCategoryBadge({ category }: { category: string }) {
   )
 }
 
+// ─── SOURCE PROVENANCE PANEL ─────────────────────────────────────────────────
+const SOURCE_TYPE_ICONS: Record<string, React.ElementType> = {
+  'news article': FiFlag,
+  'industry report': FiBarChart2,
+  'press release': FiEdit3,
+  'funding announcement': FiDollarSign,
+  'market analysis': FiTrendingUp,
+  'company directory': FiDatabase,
+  'analyst report': FiAward,
+  'regulatory filing': FiAlertCircle,
+  'other': FiGlobe,
+}
+
+function SourceProvenancePanel({ sources, companies }: { sources: DiscoverySource[]; companies: Company[] }) {
+  const [expandedSource, setExpandedSource] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+
+  if (!Array.isArray(sources) || sources.length === 0) return null
+
+  // Sort by number of companies found (most productive sources first)
+  const sorted = [...sources].sort((a, b) => (b.companies_found?.length ?? 0) - (a.companies_found?.length ?? 0))
+  const displayed = showAll ? sorted : sorted.slice(0, 8)
+  const totalCompaniesFromSources = new Set(sources.flatMap(s => Array.isArray(s.companies_found) ? s.companies_found : [])).size
+
+  return (
+    <div className="bg-card rounded-lg border border-border/30 overflow-hidden mb-5">
+      <div className="p-4 border-b border-border/20">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FiExternalLink className="w-4 h-4 text-primary" />
+            <h4 className="text-sm font-serif font-semibold text-foreground tracking-wide">Discovery Sources</h4>
+            <InlineBadge variant="default">{sources.length} sources</InlineBadge>
+          </div>
+          <span className="text-xs text-muted-foreground">{totalCompaniesFromSources} unique companies traced to sources</span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1 ml-6">Every source used in discovery, what was found there, and which companies were identified.</p>
+      </div>
+
+      <div className="divide-y divide-border/20">
+        {displayed.map((source, idx) => {
+          const isExpanded = expandedSource === (source.url || `source-${idx}`)
+          const sourceKey = source.url || `source-${idx}`
+          const companiesFromThis = Array.isArray(source.companies_found) ? source.companies_found : []
+          const TypeIcon = SOURCE_TYPE_ICONS[source.source_type] ?? FiGlobe
+          let displayUrl = source.url
+          try { displayUrl = new URL(source.url).hostname + new URL(source.url).pathname.slice(0, 50) } catch {}
+
+          // Check which found companies are actually in the campaign's company list
+          const companyNames = new Set(companies.map(c => c.name.toLowerCase()))
+          const matchedCompanies = companiesFromThis.filter(name => companyNames.has(name.toLowerCase()))
+          const unmatchedCompanies = companiesFromThis.filter(name => !companyNames.has(name.toLowerCase()))
+
+          return (
+            <div key={sourceKey} className="hover:bg-muted/10 transition-colors">
+              <button
+                onClick={() => setExpandedSource(isExpanded ? null : sourceKey)}
+                className="w-full p-4 text-left flex items-start gap-3"
+              >
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <TypeIcon className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground leading-snug">{source.title || displayUrl}</p>
+                      {source.title && source.url && (
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="text-xs text-primary hover:underline flex items-center gap-0.5 mt-0.5"
+                        >
+                          <FiExternalLink className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{displayUrl}</span>
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <InlineBadge variant={companiesFromThis.length >= 5 ? 'success' : companiesFromThis.length >= 2 ? 'accent' : 'muted'}>
+                        <HiOutlineBuildingOffice2 className="w-3 h-3 mr-0.5" />{companiesFromThis.length} {companiesFromThis.length === 1 ? 'company' : 'companies'}
+                      </InlineBadge>
+                      {isExpanded ? <FiChevronUp className="w-4 h-4 text-muted-foreground" /> : <FiChevronDown className="w-4 h-4 text-muted-foreground" />}
+                    </div>
+                  </div>
+
+                  {/* Key finding preview — always visible */}
+                  {source.key_finding && (
+                    <p className={`text-xs text-muted-foreground mt-1.5 leading-relaxed ${isExpanded ? '' : 'line-clamp-2'}`}>{source.key_finding}</p>
+                  )}
+
+                  {/* Compact company pills — always visible */}
+                  {!isExpanded && companiesFromThis.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {companiesFromThis.slice(0, 6).map((name, ci) => (
+                        <span key={ci} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-muted/50 text-foreground font-medium">{name}</span>
+                      ))}
+                      {companiesFromThis.length > 6 && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-muted/50 text-muted-foreground">+{companiesFromThis.length - 6} more</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </button>
+
+              {/* Expanded detail */}
+              {isExpanded && (
+                <div className="px-4 pb-4 pt-0 ml-11 space-y-3">
+                  {/* Source metadata */}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    {source.source_type && source.source_type !== 'other' && (
+                      <span className="flex items-center gap-1"><TypeIcon className="w-3 h-3" /> {source.source_type}</span>
+                    )}
+                    {source.date_published && source.date_published !== 'Unknown' && (
+                      <span className="flex items-center gap-1"><FiClock className="w-3 h-3" /> {source.date_published}</span>
+                    )}
+                  </div>
+
+                  {/* Relevance rationale */}
+                  {source.relevance_rationale && (
+                    <div className="bg-primary/5 rounded-lg p-3 border border-primary/10">
+                      <h5 className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-1">Why This Source Matters</h5>
+                      <p className="text-xs text-foreground leading-relaxed">{source.relevance_rationale}</p>
+                    </div>
+                  )}
+
+                  {/* Full key finding */}
+                  {source.key_finding && (
+                    <div>
+                      <h5 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">What Was Found</h5>
+                      <p className="text-xs text-foreground leading-relaxed">{source.key_finding}</p>
+                    </div>
+                  )}
+
+                  {/* Companies found from this source */}
+                  {companiesFromThis.length > 0 && (
+                    <div>
+                      <h5 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                        Companies Identified ({companiesFromThis.length})
+                      </h5>
+                      <div className="space-y-1">
+                        {matchedCompanies.map((name, ci) => {
+                          const company = companies.find(c => c.name.toLowerCase() === name.toLowerCase())
+                          return (
+                            <div key={ci} className="flex items-center gap-2 text-xs">
+                              <FiCheckCircle className="w-3 h-3 text-green-600 flex-shrink-0" />
+                              <span className="font-medium text-foreground">{name}</span>
+                              {company?.discovery_category && (
+                                <DiscoveryCategoryBadge category={company.discovery_category} />
+                              )}
+                              {company?.relevance_score != null && (
+                                <span className="text-muted-foreground">{company.relevance_score}/10</span>
+                              )}
+                            </div>
+                          )
+                        })}
+                        {unmatchedCompanies.map((name, ci) => (
+                          <div key={`unmatched-${ci}`} className="flex items-center gap-2 text-xs">
+                            <FiX className="w-3 h-3 text-muted-foreground/50 flex-shrink-0" />
+                            <span className="text-muted-foreground">{name}</span>
+                            <span className="text-[10px] text-muted-foreground/60 italic">filtered out or deduplicated</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Show more/less toggle */}
+      {sorted.length > 8 && (
+        <div className="p-3 border-t border-border/20 text-center">
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="text-xs font-medium text-primary hover:underline flex items-center gap-1 mx-auto"
+          >
+            {showAll ? (
+              <><FiChevronUp className="w-3 h-3" /> Show fewer sources</>
+            ) : (
+              <><FiChevronDown className="w-3 h-3" /> Show all {sorted.length} sources</>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── AGENT STATUS ────────────────────────────────────────────────────────────
 function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
   const ENRICHMENT_SUB_IDS = [FINANCIAL_GROWTH_AGENT_ID, NEWS_LEADERSHIP_AGENT_ID, COMPETITIVE_INTEL_AGENT_ID, RISK_WORKFORCE_AGENT_ID]
@@ -1440,6 +1750,9 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
           </div>
         </div>
       )}
+
+      {/* Source Provenance Panel — shows what each URL contributed */}
+      {!loading && <SourceProvenancePanel sources={campaign.discoverySources ?? []} companies={companies} />}
 
       {/* Import notification */}
       {lastImportInfo && (
@@ -2282,7 +2595,7 @@ export default function Page() {
   // ─ Direct Pipeline Fallback ─
   // When the Manager agent fails to consolidate results, this function
   // directly orchestrates Researcher → Extractor from the frontend.
-  const runDirectPipeline = useCallback(async (campaign: Campaign): Promise<Company[]> => {
+  const runDirectPipeline = useCallback(async (campaign: Campaign): Promise<{ companies: Company[]; sources: DiscoverySource[] }> => {
     const targetCount = campaign.filters?.targetCount ?? 50
     const geography = campaign.filters?.geography || ''
     const industries = campaign.filters?.industries?.join(', ') || ''
@@ -2345,7 +2658,7 @@ CRITICAL: For each source you find, include:
 
     if (!findingsText.trim()) {
       console.warn('[runDirectPipeline] No findings text to extract from')
-      return []
+      return { companies: [], sources: [] }
     }
 
     console.log('[runDirectPipeline] Findings text length:', findingsText.length)
@@ -2371,6 +2684,15 @@ FOR EACH COMPANY PROVIDE:
 - relevance_reasoning: A crisp 1-2 sentence explanation of why this company is relevant
 - source_urls: Array of 1-3 URLs where this company was mentioned in the research findings (use the actual article/report URLs from the sources above)
 - discovery_category: WHY this company was selected — use one of: "Recent Funding" | "Major News/Development" | "Industry Leader" | "Rapid Growth" | "Market Expansion" | "Leadership Change" | "Strategic Partnership" | "Acquisition Target" | "Emerging Player" | "Regulatory Impact" | "Directive Match"
+
+ALSO RETURN a "discovery_sources" array documenting each source URL from the research findings above. For EACH source:
+- url: The source URL
+- title: Article/report title
+- date_published: Publication date or "Unknown"
+- source_type: "news article" | "industry report" | "press release" | "funding announcement" | "market analysis" | "company directory" | "analyst report" | "regulatory filing" | "other"
+- key_finding: 1-2 sentence summary of what was found at this URL relevant to the directive
+- companies_found: Array of company names extracted from this specific source
+- relevance_rationale: Why this source matters for the prospecting directive
 
 RESEARCH FINDINGS:
 ${truncatedFindings}`
@@ -2402,7 +2724,8 @@ ${truncatedFindings}`
           }
         }
         console.log('[runDirectPipeline] Salvaged', salvaged.length, 'companies from Researcher findings')
-        return salvaged
+        const salvagedSources = extractDiscoverySources({}, researchParsed)
+        return { companies: salvaged, sources: salvagedSources }
       }
       throw new Error('Company Name Extractor failed: ' + (extractResult?.error || 'Unknown error'))
     }
@@ -2440,7 +2763,9 @@ ${truncatedFindings}`
     const { deduplicated } = deduplicateCompanies(companies)
     console.log(`[runDirectPipeline] Complete: ${deduplicated.length} unique companies extracted (${rawCompanies.length} raw, ${companies.length} valid)`)
 
-    return deduplicated
+    // Extract source provenance from both extractor and researcher results
+    const directSources = extractDiscoverySources(extractParsed, researchParsed)
+    return { companies: deduplicated, sources: directSources }
   }, [updateCampaign])
 
   // ─ Agent Calls ─
@@ -2467,6 +2792,18 @@ PIPELINE: For each search strategy:
 REQUIRED OUTPUT PER COMPANY:
 - source_urls: Array of 1-3 URLs where this company was discovered (article URLs, report URLs, press release URLs). These must be real, verifiable URLs from the search results.
 - discovery_category: A crisp label explaining WHY this company was selected. Use one of: "Recent Funding" | "Major News/Development" | "Industry Leader" | "Rapid Growth" | "Market Expansion" | "Leadership Change" | "Strategic Partnership" | "Acquisition Target" | "Emerging Player" | "Regulatory Impact" | "Directive Match"
+
+REQUIRED: SOURCE PROVENANCE REGISTRY
+In addition to the companies array, return a "discovery_sources" array documenting EVERY source URL used in this discovery. For EACH source:
+- url: The actual article/report/press-release URL
+- title: The title of the article or report
+- date_published: Publication date (YYYY-MM-DD or "Unknown")
+- source_type: "news article" | "industry report" | "press release" | "funding announcement" | "market analysis" | "company directory" | "analyst report" | "regulatory filing" | "other"
+- key_finding: 1-2 sentence summary of WHAT was found at this URL that is relevant to the directive (e.g. "Article details 8 cybersecurity firms expanding federal contracts due to new CMMC requirements")
+- companies_found: Array of company names identified from this specific source
+- relevance_rationale: WHY this source matters — what insight or signal it provides for the prospecting directive
+
+This provenance chain gives users full transparency into the origin of every company in the list.
 
 Cast the widest net possible - extract companies from news articles, press releases, industry reports, and market analyses.`
     try {
@@ -2572,13 +2909,14 @@ Cast the widest net possible - extract companies from news articles, press relea
         console.warn('[runDiscovery] Manager returned 0 companies. Falling back to direct pipeline. Parsed keys:', Object.keys(parsed))
         // FALLBACK: Directly orchestrate Researcher + Extractor from frontend
         try {
-          const fallbackCompanies = await runDirectPipeline(campaign)
-          if (fallbackCompanies.length > 0) {
-            const segStrategy: SegmentStrategy[] = [{ segment_name: 'Direct Pipeline Fallback', target_count: targetCount, actual_count: fallbackCompanies.length }]
+          const fallbackResult = await runDirectPipeline(campaign)
+          if (fallbackResult.companies.length > 0) {
+            const segStrategy: SegmentStrategy[] = [{ segment_name: 'Direct Pipeline Fallback', target_count: targetCount, actual_count: fallbackResult.companies.length }]
             updateCampaign({
-              ...campaign, companies: fallbackCompanies, stage: 'discovery',
-              searchSummary: `Found ${fallbackCompanies.length} companies via direct Research + Extract pipeline (fallback mode).`,
+              ...campaign, companies: fallbackResult.companies, stage: 'discovery',
+              searchSummary: `Found ${fallbackResult.companies.length} companies via direct Research + Extract pipeline (fallback mode).`,
               segmentationStrategy: segStrategy, duplicatesRemoved: 0, updatedAt: new Date().toISOString(),
+              discoverySources: fallbackResult.sources,
             })
             setLoading(false)
             setActiveAgentId(null)
@@ -2602,9 +2940,11 @@ Cast the widest net possible - extract companies from news articles, press relea
           }))
         : []
       const duplicatesRemoved = typeof parsed?.duplicates_removed === 'number' ? parsed.duplicates_removed : 0
+      const discoverySources = extractDiscoverySources(parsed)
       updateCampaign({
         ...campaign, companies, stage: 'discovery', searchSummary: parsed?.search_summary ?? '',
         segmentationStrategy, duplicatesRemoved, updatedAt: new Date().toISOString(),
+        discoverySources,
       })
     } catch (err) {
       console.error('[runDiscovery] Exception:', err)
