@@ -381,6 +381,61 @@ function extractDiscoverySources(parsed: any, researchParsed?: any): DiscoverySo
   return sources
 }
 
+// ─── CLIENT-SIDE SOURCE URL CROSS-REFERENCING ────────────────────────────────
+// Instead of relying on LLMs to populate source_urls per company (which they do unreliably),
+// this function programmatically maps researcher findings to extracted companies by name matching.
+function crossReferenceSourceUrls(
+  companies: Company[],
+  researcherFindings: any[]
+): Company[] {
+  if (!Array.isArray(researcherFindings) || researcherFindings.length === 0) return companies
+
+  // Build a lookup: company name (lowercase) → set of source URLs
+  const companyUrlMap = new Map<string, Set<string>>()
+
+  for (const finding of researcherFindings) {
+    const url = finding?.source_url ?? finding?.url ?? ''
+    if (!url || typeof url !== 'string' || !url.trim()) continue
+    const cleanUrl = url.trim()
+
+    const mentioned = Array.isArray(finding?.companies_mentioned) ? finding.companies_mentioned : []
+    const content = typeof finding?.content === 'string' ? finding.content : ''
+
+    for (const companyName of mentioned) {
+      if (typeof companyName === 'string' && companyName.trim()) {
+        const key = companyName.trim().toLowerCase()
+        if (!companyUrlMap.has(key)) companyUrlMap.set(key, new Set())
+        companyUrlMap.get(key)!.add(cleanUrl)
+      }
+    }
+
+    // Also try fuzzy matching: if a company name appears in the finding content, link it
+    for (const company of companies) {
+      const companyLower = company.name.trim().toLowerCase()
+      if (!companyLower) continue
+      // Check if company name appears in the finding's content or companies_mentioned
+      const mentionedLower = mentioned.map((m: string) => (typeof m === 'string' ? m.trim().toLowerCase() : ''))
+      const inMentioned = mentionedLower.some((m: string) => m === companyLower || m.includes(companyLower) || companyLower.includes(m))
+      const inContent = content.toLowerCase().includes(companyLower)
+      if (inMentioned || inContent) {
+        if (!companyUrlMap.has(companyLower)) companyUrlMap.set(companyLower, new Set())
+        companyUrlMap.get(companyLower)!.add(cleanUrl)
+      }
+    }
+  }
+
+  // Enrich each company with matched source URLs
+  return companies.map(co => {
+    const key = co.name.trim().toLowerCase()
+    const matchedUrls = companyUrlMap.get(key)
+    // Merge with any existing source_urls the LLM may have returned
+    const existingUrls = Array.isArray(co.source_urls) ? co.source_urls.filter(u => typeof u === 'string' && u.trim()) : []
+    const matchedArr = matchedUrls ? Array.from(matchedUrls) : []
+    const allUrls = new Set([...existingUrls, ...matchedArr])
+    return { ...co, source_urls: Array.from(allUrls).slice(0, 5) }
+  })
+}
+
 // ─── MARKDOWN RENDERER ───────────────────────────────────────────────────────
 function formatInline(text: string) {
   const parts = text.split(/\*\*(.*?)\*\*/g)
@@ -2610,18 +2665,37 @@ ${geography ? `Geography focus: ${geography}.` : ''}
 ${industries ? `Target industries: ${industries}.` : ''}
 ${sizeRange ? `Company size range: ${sizeRange}.` : ''}
 
+TODAY'S DATE: ${new Date().toISOString().split('T')[0]}. Only use sources from 2024-present.
+
 SEMANTIC SEARCH APPROACH: Do NOT just search for keywords from the directive. Instead, think deeper:
 - What business problems does this directive address? Search for companies experiencing those problems.
 - What industry trends, regulations, or events drive demand in this space?
 - What adjacent markets or verticals are also relevant?
 - Search for recent funding rounds, leadership hires, product launches, and expansion announcements in this sector.
 
+YOU MUST PERFORM LIVE WEB SEARCHES. Use your search tools and web grounding capabilities to find REAL, CURRENT articles and reports. Do NOT rely on your training data to generate company names. Every company you mention MUST come from a verifiable web source.
+
 Search broadly across news articles, industry reports, press releases, market analyses, funding announcements, and company directories. Find as many relevant companies as possible (target: ${targetCount}+).
 
-CRITICAL: For each source you find, include:
-- The source URL (the actual article/report URL)
-- Source title and publication date
-- EVERY company name mentioned — even companies mentioned in passing or as competitors, partners, or vendors.`
+REQUIRED OUTPUT FORMAT — Return a JSON object with a "findings" array. Each finding represents ONE source you searched:
+{
+  "findings": [
+    {
+      "source_url": "https://actual-article-url.com/...",
+      "source_title": "Title of the article or report",
+      "source_type": "news article | industry report | press release | funding announcement | market analysis | company directory | analyst report",
+      "date_published": "YYYY-MM-DD or approximate date",
+      "content": "2-4 sentence summary of what this source covers and its relevance to the directive",
+      "companies_mentioned": ["Company A", "Company B", "Company C"]
+    }
+  ]
+}
+
+CRITICAL RULES:
+- source_url MUST be a real URL from your web search results — not fabricated or from training data
+- companies_mentioned MUST list EVERY company name found in this source — including competitors, partners, vendors, and companies mentioned in passing
+- Include at least 5-10 distinct source URLs for comprehensive coverage
+- Each finding should have a real, verifiable source_url`
 
     const researchResult = await callAIAgent(researchMessage, DISCOVERY_RESEARCHER_ID)
     console.log('[runDirectPipeline] Researcher result success:', researchResult?.success)
@@ -2763,17 +2837,57 @@ ${truncatedFindings}`
     const { deduplicated } = deduplicateCompanies(companies)
     console.log(`[runDirectPipeline] Complete: ${deduplicated.length} unique companies extracted (${rawCompanies.length} raw, ${companies.length} valid)`)
 
+    // CLIENT-SIDE cross-reference: map researcher findings URLs to companies by name matching
+    // This is the reliable path — we don't trust the LLM to have populated source_urls correctly
+    const researcherFindings = Array.isArray(researchParsed?.findings) ? researchParsed.findings : []
+    const enrichedWithUrls = crossReferenceSourceUrls(deduplicated, researcherFindings)
+    console.log(`[runDirectPipeline] Cross-referenced source URLs. Companies with URLs: ${enrichedWithUrls.filter(c => c.source_urls && c.source_urls.length > 0).length}/${enrichedWithUrls.length}`)
+
     // Extract source provenance from both extractor and researcher results
     const directSources = extractDiscoverySources(extractParsed, researchParsed)
-    return { companies: deduplicated, sources: directSources }
+    return { companies: enrichedWithUrls, sources: directSources }
   }, [updateCampaign])
 
   // ─ Agent Calls ─
+  // PRIMARY DISCOVERY PATH: Direct Pipeline (Researcher → Extractor)
+  // We use the direct pipeline as the primary path because it gives us access to the raw
+  // Researcher findings, enabling client-side cross-referencing of source URLs to companies.
+  // The Manager agent loses source provenance data during LLM-to-LLM orchestration.
+  // If the direct pipeline fails, we fall back to the Manager agent.
   const runDiscovery = useCallback(async (campaign: Campaign) => {
     setLoading(true)
     setError(null)
-    setActiveAgentId(DISCOVERY_MANAGER_ID)
     const targetCount = campaign.filters?.targetCount ?? 50
+
+    // ── PRIMARY: Direct Pipeline (Researcher → Extractor) ──
+    // This path preserves source provenance because we capture raw Researcher findings
+    // and cross-reference them with extracted companies in JavaScript (not via LLM).
+    try {
+      console.log('[runDiscovery] Starting PRIMARY path: Direct Pipeline (Researcher → Extractor) for source provenance')
+      const directResult = await runDirectPipeline(campaign)
+      if (directResult.companies.length > 0) {
+        const withUrlsCount = directResult.companies.filter(c => c.source_urls && c.source_urls.length > 0).length
+        console.log(`[runDiscovery] Direct pipeline succeeded: ${directResult.companies.length} companies, ${withUrlsCount} with source URLs, ${directResult.sources.length} provenance sources`)
+        const segStrategy: SegmentStrategy[] = [{ segment_name: 'Web Research Pipeline', target_count: targetCount, actual_count: directResult.companies.length }]
+        updateCampaign({
+          ...campaign, companies: directResult.companies, stage: 'discovery',
+          searchSummary: `Discovered ${directResult.companies.length} companies via web research pipeline with ${withUrlsCount} source-verified.`,
+          segmentationStrategy: segStrategy, duplicatesRemoved: 0, updatedAt: new Date().toISOString(),
+          discoverySources: directResult.sources,
+        })
+        setLoading(false)
+        setActiveAgentId(null)
+        return
+      }
+      console.warn('[runDiscovery] Direct pipeline returned 0 companies. Falling back to Manager agent.')
+    } catch (directErr) {
+      console.warn('[runDiscovery] Direct pipeline failed, falling back to Manager agent:', directErr)
+    }
+
+    // ── FALLBACK: Manager Agent ──
+    // The Manager orchestrates sub-agents internally. We lose access to raw Researcher findings
+    // (and thus source URLs), but it may succeed where direct pipeline doesn't.
+    setActiveAgentId(DISCOVERY_MANAGER_ID)
     const filtersStr = campaign.filters ? JSON.stringify({ geography: campaign.filters.geography, sizeRange: campaign.filters.sizeRange, industries: campaign.filters.industries }) : 'No specific filters'
     const message = `Business directive: ${campaign.directive}. Target company count: ${targetCount}. Filters: ${filtersStr}.
 
@@ -2803,16 +2917,18 @@ In addition to the companies array, return a "discovery_sources" array documenti
 - companies_found: Array of company names identified from this specific source
 - relevance_rationale: WHY this source matters — what insight or signal it provides for the prospecting directive
 
+ALSO INCLUDE the raw "findings" array from the Researcher — each finding should have source_url, source_title, date_published, content, and companies_mentioned.
+
 This provenance chain gives users full transparency into the origin of every company in the list.
 
 Cast the widest net possible - extract companies from news articles, press releases, industry reports, and market analyses.`
     try {
       const result = await callAIAgent(message, DISCOVERY_MANAGER_ID)
-      console.log('[runDiscovery] Raw agent result:', JSON.stringify(result).slice(0, 2000))
+      console.log('[runDiscovery] Manager raw agent result:', JSON.stringify(result).slice(0, 2000))
 
       if (!result?.success) {
         const errMsg = result?.error || result?.response?.message || 'Agent returned an error. Please try again.'
-        console.error('[runDiscovery] Agent call failed:', errMsg)
+        console.error('[runDiscovery] Manager agent call failed:', errMsg)
         setError(errMsg)
         setLoading(false)
         setActiveAgentId(null)
@@ -2820,7 +2936,7 @@ Cast the widest net possible - extract companies from news articles, press relea
       }
 
       const parsed = parseAgentResult(result)
-      console.log('[runDiscovery] Parsed result keys:', parsed ? Object.keys(parsed) : 'null')
+      console.log('[runDiscovery] Manager parsed result keys:', parsed ? Object.keys(parsed) : 'null')
 
       if (!parsed) {
         console.error('[runDiscovery] parseAgentResult returned null. Full response:', JSON.stringify(result).slice(0, 3000))
@@ -2906,32 +3022,21 @@ Cast the widest net possible - extract companies from news articles, press relea
       })).filter((c: Company) => c.name.trim().length > 0)
 
       if (companies.length === 0) {
-        console.warn('[runDiscovery] Manager returned 0 companies. Falling back to direct pipeline. Parsed keys:', Object.keys(parsed))
-        // FALLBACK: Directly orchestrate Researcher + Extractor from frontend
-        try {
-          const fallbackResult = await runDirectPipeline(campaign)
-          if (fallbackResult.companies.length > 0) {
-            const segStrategy: SegmentStrategy[] = [{ segment_name: 'Direct Pipeline Fallback', target_count: targetCount, actual_count: fallbackResult.companies.length }]
-            updateCampaign({
-              ...campaign, companies: fallbackResult.companies, stage: 'discovery',
-              searchSummary: `Found ${fallbackResult.companies.length} companies via direct Research + Extract pipeline (fallback mode).`,
-              segmentationStrategy: segStrategy, duplicatesRemoved: 0, updatedAt: new Date().toISOString(),
-              discoverySources: fallbackResult.sources,
-            })
-            setLoading(false)
-            setActiveAgentId(null)
-            return
-          }
-        } catch (fallbackErr) {
-          console.error('[runDiscovery] Fallback pipeline also failed:', fallbackErr)
-        }
         setError(`Discovery completed but no companies were found. Try a more specific directive or retry.`)
         setLoading(false)
         setActiveAgentId(null)
         return
       }
 
-      console.log(`[runDiscovery] Successfully extracted ${companies.length} companies`)
+      console.log(`[runDiscovery] Manager extracted ${companies.length} companies`)
+
+      // CLIENT-SIDE cross-reference: if Manager response contains findings, map URLs to companies
+      const managerFindings = Array.isArray(parsed?.findings) ? parsed.findings : []
+      const companiesWithUrls = managerFindings.length > 0
+        ? crossReferenceSourceUrls(companies, managerFindings)
+        : companies
+      const companiesWithUrlsCount = companiesWithUrls.filter(c => c.source_urls && c.source_urls.length > 0).length
+      console.log(`[runDiscovery] Cross-referenced source URLs from Manager findings (${managerFindings.length} findings). Companies with URLs: ${companiesWithUrlsCount}/${companiesWithUrls.length}`)
 
       const segmentationStrategy: SegmentStrategy[] = Array.isArray(parsed?.segmentation_strategy)
         ? parsed.segmentation_strategy.map((s: any) => ({
@@ -2942,7 +3047,7 @@ Cast the widest net possible - extract companies from news articles, press relea
       const duplicatesRemoved = typeof parsed?.duplicates_removed === 'number' ? parsed.duplicates_removed : 0
       const discoverySources = extractDiscoverySources(parsed)
       updateCampaign({
-        ...campaign, companies, stage: 'discovery', searchSummary: parsed?.search_summary ?? '',
+        ...campaign, companies: companiesWithUrls, stage: 'discovery', searchSummary: parsed?.search_summary ?? '',
         segmentationStrategy, duplicatesRemoved, updatedAt: new Date().toISOString(),
         discoverySources,
       })
