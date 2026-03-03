@@ -81,6 +81,8 @@ interface Company {
   source_segment?: string
   selected?: boolean
   note?: string
+  source_urls?: string[]
+  discovery_category?: string
 }
 
 interface SegmentStrategy {
@@ -355,10 +357,10 @@ function getSampleCampaign(): Campaign {
     directive: 'Find mid-market and enterprise B2B SaaS companies in North America focused on data analytics, cloud infrastructure, or cybersecurity with 200-5000 employees, prioritizing those showing recent growth signals.',
     filters: { geography: 'North America', sizeRange: '200-5000', industries: ['SaaS', 'Data Analytics', 'Cybersecurity'] },
     companies: [
-      { name: 'DataVault Technologies', industry: 'Data Analytics', hq_location: 'San Francisco, CA', estimated_size: '500-1000', relevance_score: 9, relevance_reasoning: 'Strong growth in cloud data analytics, recent Series C funding, expanding enterprise customer base.', website: 'https://datavault.example.com', selected: true },
-      { name: 'CyberShield Solutions', industry: 'Cybersecurity', hq_location: 'Austin, TX', estimated_size: '200-500', relevance_score: 8, relevance_reasoning: 'Leading endpoint security vendor with rapid SMB-to-enterprise transition.', website: 'https://cybershield.example.com', selected: true },
-      { name: 'CloudNexus Inc', industry: 'Cloud Infrastructure', hq_location: 'Seattle, WA', estimated_size: '1000-2000', relevance_score: 8, relevance_reasoning: 'Major cloud orchestration platform with strong partnership network.', website: 'https://cloudnexus.example.com', selected: false },
-      { name: 'InsightFlow Analytics', industry: 'Business Intelligence', hq_location: 'New York, NY', estimated_size: '300-600', relevance_score: 7, relevance_reasoning: 'Emerging BI platform with AI-driven insights for mid-market.', website: 'https://insightflow.example.com', selected: false },
+      { name: 'DataVault Technologies', industry: 'Data Analytics', hq_location: 'San Francisco, CA', estimated_size: '500-1000', relevance_score: 9, relevance_reasoning: 'Strong growth in cloud data analytics, recent Series C funding of $80M, expanding enterprise customer base. New CRO hired from Snowflake signals sales infrastructure investment.', website: 'https://datavault.example.com', selected: true, source_urls: ['https://techcrunch.com/2024/11/15/datavault-series-c', 'https://businessinsider.com/datavault-analytics-growth-2024'], discovery_category: 'Recent Funding' },
+      { name: 'CyberShield Solutions', industry: 'Cybersecurity', hq_location: 'Austin, TX', estimated_size: '200-500', relevance_score: 8, relevance_reasoning: 'Leading endpoint security vendor with rapid SMB-to-enterprise transition. Won $15M DoD contract, validating federal-grade capabilities.', website: 'https://cybershield.example.com', selected: true, source_urls: ['https://defensenews.com/2024/12/cybershield-dod-contract', 'https://crunchbase.com/organization/cybershield'], discovery_category: 'Major News/Development' },
+      { name: 'CloudNexus Inc', industry: 'Cloud Infrastructure', hq_location: 'Seattle, WA', estimated_size: '1000-2000', relevance_score: 8, relevance_reasoning: 'Major cloud orchestration platform with 1000+ enterprise clients. Strong partnership network with hyperscale cloud providers.', website: 'https://cloudnexus.example.com', selected: false, source_urls: ['https://cloudcomputing-news.net/cloudnexus-2024-review'], discovery_category: 'Industry Leader' },
+      { name: 'InsightFlow Analytics', industry: 'Business Intelligence', hq_location: 'New York, NY', estimated_size: '300-600', relevance_score: 7, relevance_reasoning: 'Emerging BI platform with AI-driven insights for mid-market. Tripled customer base in 12 months with 200% YoY ARR growth.', website: 'https://insightflow.example.com', selected: false, source_urls: ['https://saastr.com/insightflow-growth-story-2024'], discovery_category: 'Rapid Growth' },
     ],
     enrichedCompanies: [
       {
@@ -1047,6 +1049,31 @@ function InlineBadge({ children, variant = 'default' }: { children: React.ReactN
   )
 }
 
+// ─── DISCOVERY CATEGORY BADGE ────────────────────────────────────────────────
+const CATEGORY_STYLES: Record<string, { variant: 'default' | 'success' | 'warning' | 'danger' | 'accent' | 'muted'; icon: React.ElementType }> = {
+  'Recent Funding': { variant: 'success', icon: FiDollarSign },
+  'Major News/Development': { variant: 'warning', icon: FiFlag },
+  'Industry Leader': { variant: 'accent', icon: FiAward },
+  'Rapid Growth': { variant: 'success', icon: FiTrendingUp },
+  'Market Expansion': { variant: 'default', icon: FiGlobe },
+  'Leadership Change': { variant: 'warning', icon: FiUsers },
+  'Strategic Partnership': { variant: 'default', icon: FiBriefcase },
+  'Acquisition Target': { variant: 'danger', icon: FiTarget },
+  'Emerging Player': { variant: 'accent', icon: FiStar },
+  'Regulatory Impact': { variant: 'danger', icon: FiAlertCircle },
+  'Directive Match': { variant: 'muted', icon: FiSearch },
+}
+
+function DiscoveryCategoryBadge({ category }: { category: string }) {
+  const config = CATEGORY_STYLES[category] ?? { variant: 'muted' as const, icon: FiSearch }
+  const Icon = config.icon
+  return (
+    <InlineBadge variant={config.variant}>
+      <Icon className="w-3 h-3 mr-0.5" />{category}
+    </InlineBadge>
+  )
+}
+
 // ─── AGENT STATUS ────────────────────────────────────────────────────────────
 function AgentStatusPanel({ activeAgentId }: { activeAgentId: string | null }) {
   const ENRICHMENT_SUB_IDS = [FINANCIAL_GROWTH_AGENT_ID, NEWS_LEADERSHIP_AGENT_ID, COMPETITIVE_INTEL_AGENT_ID, RISK_WORKFORCE_AGENT_ID]
@@ -1542,7 +1569,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                     <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden lg:table-cell">Location</th>
                     <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden lg:table-cell">Size</th>
                     <th className="p-3 font-serif font-semibold text-foreground tracking-wide">Relevance</th>
-                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden xl:table-cell">Segment</th>
+                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden xl:table-cell">Why Selected</th>
                     <th className="p-3 w-20"></th>
                   </tr>
                 </thead>
@@ -1567,7 +1594,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                         <td className="p-3 text-muted-foreground hidden lg:table-cell"><span className="flex items-center gap-1"><FiMapPin className="w-3 h-3" /> {co.hq_location}</span></td>
                         <td className="p-3 text-muted-foreground hidden lg:table-cell">{co.estimated_size}</td>
                         <td className="p-3"><RelevanceBar score={co.relevance_score} /></td>
-                        <td className="p-3 hidden xl:table-cell">{co.source_segment === 'File Upload' ? <InlineBadge variant="accent"><FiUpload className="w-3 h-3 mr-0.5" />Uploaded</InlineBadge> : co.source_segment ? <InlineBadge variant="muted">{co.source_segment}</InlineBadge> : <span className="text-xs text-muted-foreground">-</span>}</td>
+                        <td className="p-3 hidden xl:table-cell">{co.source_segment === 'File Upload' ? <InlineBadge variant="accent"><FiUpload className="w-3 h-3 mr-0.5" />Uploaded</InlineBadge> : co.discovery_category ? <DiscoveryCategoryBadge category={co.discovery_category} /> : co.source_segment ? <InlineBadge variant="muted">{co.source_segment}</InlineBadge> : <span className="text-xs text-muted-foreground">-</span>}</td>
                         <td className="p-3">
                           <div className="flex items-center gap-1">
                             <button onClick={() => setExpandedRow(expandedRow === co.name ? null : co.name)} className="p-1 rounded hover:bg-muted text-muted-foreground">
@@ -1582,13 +1609,16 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                       {expandedRow === co.name && (
                         <tr>
                           <td colSpan={8} className="px-6 py-4 bg-muted/20">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div>
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Relevance Reasoning</h4>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiTarget className="w-3 h-3" /> Why Selected</h4>
+                                {co.discovery_category && (
+                                  <div className="mb-2"><DiscoveryCategoryBadge category={co.discovery_category} /></div>
+                                )}
                                 <p className="text-sm text-foreground leading-relaxed">{co.relevance_reasoning}</p>
                               </div>
                               <div>
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Details</h4>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Details</h4>
                                 <div className="space-y-1 text-sm">
                                   <p><span className="text-muted-foreground">Industry:</span> <span className="text-foreground">{co.industry}</span></p>
                                   <p><span className="text-muted-foreground">Location:</span> <span className="text-foreground">{co.hq_location}</span></p>
@@ -1596,6 +1626,25 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                                   <p><span className="text-muted-foreground">Score:</span> <span className="text-foreground">{co.relevance_score}/10</span></p>
                                   {co.source_segment && <p><span className="text-muted-foreground">Segment:</span> <span className="text-foreground">{co.source_segment}</span></p>}
                                 </div>
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><FiExternalLink className="w-3 h-3" /> Source URLs</h4>
+                                {Array.isArray(co.source_urls) && co.source_urls.length > 0 ? (
+                                  <div className="space-y-1.5">
+                                    {co.source_urls.map((url, ui) => {
+                                      let displayUrl = url
+                                      try { displayUrl = new URL(url).hostname + new URL(url).pathname.slice(0, 40) } catch {}
+                                      return (
+                                        <a key={ui} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-primary hover:underline group">
+                                          <FiExternalLink className="w-3 h-3 flex-shrink-0 group-hover:text-primary" />
+                                          <span className="truncate">{displayUrl}</span>
+                                        </a>
+                                      )
+                                    })}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-muted-foreground italic">No source URLs available</p>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -2242,13 +2291,24 @@ export default function Page() {
     console.log('[runDirectPipeline] Starting direct Researcher → Extractor pipeline')
     setActiveAgentId(DISCOVERY_RESEARCHER_ID)
 
-    // Step 1: Call Discovery Researcher with the campaign directive
+    // Step 1: Call Discovery Researcher with the campaign directive + semantic search
     const researchMessage = `Search directive: ${campaign.directive}.
 ${geography ? `Geography focus: ${geography}.` : ''}
 ${industries ? `Target industries: ${industries}.` : ''}
 ${sizeRange ? `Company size range: ${sizeRange}.` : ''}
 
-Search broadly across news articles, industry reports, press releases, market analyses, funding announcements, and company directories. Find as many relevant companies as possible (target: ${targetCount}+). For each source, list EVERY company name mentioned — even companies mentioned in passing or as competitors, partners, or vendors.`
+SEMANTIC SEARCH APPROACH: Do NOT just search for keywords from the directive. Instead, think deeper:
+- What business problems does this directive address? Search for companies experiencing those problems.
+- What industry trends, regulations, or events drive demand in this space?
+- What adjacent markets or verticals are also relevant?
+- Search for recent funding rounds, leadership hires, product launches, and expansion announcements in this sector.
+
+Search broadly across news articles, industry reports, press releases, market analyses, funding announcements, and company directories. Find as many relevant companies as possible (target: ${targetCount}+).
+
+CRITICAL: For each source you find, include:
+- The source URL (the actual article/report URL)
+- Source title and publication date
+- EVERY company name mentioned — even companies mentioned in passing or as competitors, partners, or vendors.`
 
     const researchResult = await callAIAgent(researchMessage, DISCOVERY_RESEARCHER_ID)
     console.log('[runDirectPipeline] Researcher result success:', researchResult?.success)
@@ -2274,7 +2334,8 @@ Search broadly across news articles, industry reports, press releases, market an
         const content = f?.content || ''
         const companies = Array.isArray(f?.companies_mentioned) ? f.companies_mentioned.join(', ') : ''
         const date = f?.date_published || ''
-        return `--- SOURCE ${i + 1}: ${title} (${type}, ${date}) ---\n${content}\nCompanies mentioned: ${companies}`
+        const url = f?.source_url || f?.url || ''
+        return `--- SOURCE ${i + 1}: ${title} (${type}, ${date}) ---\n${url ? `URL: ${url}\n` : ''}${content}\nCompanies mentioned: ${companies}`
       }).join('\n\n')
     } else if (researchParsed?.segment_summary) {
       findingsText = researchParsed.segment_summary
@@ -2302,7 +2363,14 @@ Search broadly across news articles, industry reports, press releases, market an
 ${geography ? `Geography focus: ${geography}.` : ''}
 ${industries ? `Target industries: ${industries}.` : ''}
 
-IMPORTANT: Extract EVERY company mentioned — even competitors, partners, vendors, or companies mentioned in passing. For each company, provide industry, HQ location, estimated size, and relevance score (1-10) based on the directive.
+IMPORTANT: Extract EVERY company mentioned — even competitors, partners, vendors, or companies mentioned in passing.
+
+FOR EACH COMPANY PROVIDE:
+- name, industry, hq_location, estimated_size, website
+- relevance_score (1-10) based on the directive
+- relevance_reasoning: A crisp 1-2 sentence explanation of why this company is relevant
+- source_urls: Array of 1-3 URLs where this company was mentioned in the research findings (use the actual article/report URLs from the sources above)
+- discovery_category: WHY this company was selected — use one of: "Recent Funding" | "Major News/Development" | "Industry Leader" | "Rapid Growth" | "Market Expansion" | "Leadership Change" | "Strategic Partnership" | "Acquisition Target" | "Emerging Player" | "Regulatory Impact" | "Directive Match"
 
 RESEARCH FINDINGS:
 ${truncatedFindings}`
@@ -2325,6 +2393,8 @@ ${truncatedFindings}`
                   name: name.trim(), industry: '', hq_location: '', estimated_size: '',
                   relevance_score: 5, relevance_reasoning: `Mentioned in: ${finding?.source_title || 'web search'}`,
                   website: '', source_segment: researchParsed?.segment_name ?? 'Direct Pipeline',
+                  source_urls: (finding?.source_url || finding?.url) ? [finding.source_url || finding.url] : [],
+                  discovery_category: 'Directive Match',
                   selected: true,
                 })
               }
@@ -2361,6 +2431,8 @@ ${truncatedFindings}`
       relevance_reasoning: c?.relevance_reasoning ?? c?.mention_context ?? '',
       website: c?.website ?? '',
       source_segment: c?.search_segment ?? extractParsed?.search_segment ?? 'Direct Pipeline',
+      source_urls: Array.isArray(c?.source_urls) ? c.source_urls.filter((u: any) => typeof u === 'string' && u.trim()) : [],
+      discovery_category: c?.discovery_category ?? '',
       selected: true,
     })).filter((c: Company) => c.name.trim().length > 0)
 
@@ -2378,7 +2450,25 @@ ${truncatedFindings}`
     setActiveAgentId(DISCOVERY_MANAGER_ID)
     const targetCount = campaign.filters?.targetCount ?? 50
     const filtersStr = campaign.filters ? JSON.stringify({ geography: campaign.filters.geography, sizeRange: campaign.filters.sizeRange, industries: campaign.filters.industries }) : 'No specific filters'
-    const message = `Business directive: ${campaign.directive}. Target company count: ${targetCount}. Filters: ${filtersStr}. Use the full Research-then-Extract pipeline: 1) Segment this directive into 3-5 search strategies, 2) For each segment, delegate to the Discovery Researcher to search the web, 3) Pass ALL findings to the Company Name Extractor to identify every company name from articles and reports, 4) Deduplicate and consolidate into a final list of ${targetCount}+ companies. Cast the widest net possible - extract companies from news articles, press releases, industry reports, and market analyses.`
+    const message = `Business directive: ${campaign.directive}. Target company count: ${targetCount}. Filters: ${filtersStr}.
+
+SEMANTIC SEARCH GENERATION: Analyze the business directive above and generate 3-5 distinct semantic search strategies that go BEYOND simple keyword matching. Think about:
+- What specific business problems does this directive address? Search for companies experiencing those problems.
+- What industry events, regulations, or trends would drive demand? Search for companies affected by those.
+- What adjacent industries or verticals might also be relevant? Search those too.
+- What recent news categories (funding rounds, leadership changes, expansions, acquisitions) signal companies that match?
+- What conferences, industry associations, or analyst reports cover this space?
+
+PIPELINE: For each search strategy:
+1) Delegate to the Discovery Researcher to search the web using the semantic queries
+2) Pass ALL findings to the Company Name Extractor to identify every company name
+3) Deduplicate and consolidate into a final list of ${targetCount}+ companies
+
+REQUIRED OUTPUT PER COMPANY:
+- source_urls: Array of 1-3 URLs where this company was discovered (article URLs, report URLs, press release URLs). These must be real, verifiable URLs from the search results.
+- discovery_category: A crisp label explaining WHY this company was selected. Use one of: "Recent Funding" | "Major News/Development" | "Industry Leader" | "Rapid Growth" | "Market Expansion" | "Leadership Change" | "Strategic Partnership" | "Acquisition Target" | "Emerging Player" | "Regulatory Impact" | "Directive Match"
+
+Cast the widest net possible - extract companies from news articles, press releases, industry reports, and market analyses.`
     try {
       const result = await callAIAgent(message, DISCOVERY_MANAGER_ID)
       console.log('[runDiscovery] Raw agent result:', JSON.stringify(result).slice(0, 2000))
@@ -2418,6 +2508,8 @@ ${truncatedFindings}`
           estimated_size: ec?.estimated_size ?? '', relevance_score: typeof ec?.relevance_score === 'number' ? ec.relevance_score : 0,
           relevance_reasoning: ec?.mention_context ?? ec?.relevance_reasoning ?? '', website: ec?.website ?? '',
           source_segment: ec?.search_segment ?? parsed?.search_segment ?? '',
+          source_urls: Array.isArray(ec?.source_urls) ? ec.source_urls : [],
+          discovery_category: ec?.discovery_category ?? '',
         }))
         console.log('[runDiscovery] Found companies via extracted_companies format:', rawCompanies.length)
       }
@@ -2433,6 +2525,8 @@ ${truncatedFindings}`
                   name: name.trim(), industry: '', hq_location: '', estimated_size: '',
                   relevance_score: 50, relevance_reasoning: `Mentioned in: ${finding?.source_title || 'web search'}`,
                   website: '', source_segment: parsed?.segment_name ?? '',
+                  source_urls: (finding?.source_url || finding?.url) ? [finding.source_url || finding.url] : [],
+                  discovery_category: 'Directive Match',
                 })
               }
             }
@@ -2469,6 +2563,8 @@ ${truncatedFindings}`
         relevance_reasoning: c?.relevance_reasoning ?? c?.mention_context ?? '',
         website: c?.website ?? '',
         source_segment: c?.source_segment ?? c?.search_segment ?? '',
+        source_urls: Array.isArray(c?.source_urls) ? c.source_urls.filter((u: any) => typeof u === 'string' && u.trim()) : [],
+        discovery_category: c?.discovery_category ?? '',
         selected: true,
       })).filter((c: Company) => c.name.trim().length > 0)
 
