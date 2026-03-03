@@ -2210,7 +2210,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">Step 1: Web Research</p>
-                <p className="text-xs text-muted-foreground">Searching news articles, industry reports, press releases, and market analyses across multiple search strategies...</p>
+                <p className="text-xs text-muted-foreground">Searching 15-25+ sources across news, industry reports, press releases, market maps, ranked lists, and directories...</p>
               </div>
             </div>
             <div className="ml-3 w-px h-4 bg-border/40" />
@@ -2219,8 +2219,18 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                 <FiLayers className="w-3 h-3 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Step 2: Company Name Extraction</p>
-                <p className="text-xs text-muted-foreground">Identifying every company name mentioned in search results -- even companies mentioned in passing</p>
+                <p className="text-sm font-medium text-muted-foreground">Step 2: Exhaustive Extraction</p>
+                <p className="text-xs text-muted-foreground">Extracting every company from search results, including all entries from tables, rankings, and structured data</p>
+              </div>
+            </div>
+            <div className="ml-3 w-px h-4 bg-border/40" />
+            <div className="flex items-start gap-3">
+              <div className="w-6 h-6 rounded-full bg-muted/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <FiCheckCircle className="w-3 h-3 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Step 3: Validation Pass</p>
+                <p className="text-xs text-muted-foreground">Re-reading sources to catch missed companies, especially from tables and lists, and verifying relevance to directive</p>
               </div>
             </div>
             <div className="ml-3 w-px h-4 bg-border/40" />
@@ -2229,8 +2239,8 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                 <FiDatabase className="w-3 h-3 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Step 3: Deduplication & Scoring</p>
-                <p className="text-xs text-muted-foreground">Merging results, removing duplicates, and scoring each company for relevance</p>
+                <p className="text-sm font-medium text-muted-foreground">Step 4: Deduplication & Scoring</p>
+                <p className="text-xs text-muted-foreground">Merging all results, removing duplicates, cross-referencing source URLs, and scoring for relevance</p>
               </div>
             </div>
           </div>
@@ -3023,10 +3033,18 @@ SEMANTIC SEARCH APPROACH: Do NOT just search for keywords from the directive. In
 - What industry trends, regulations, or events drive demand in this space?
 - What adjacent markets or verticals are also relevant?
 - Search for recent funding rounds, leadership hires, product launches, and expansion announcements in this sector.
+- What industry rankings, market reports, or "top companies" lists exist in this space? These are GOLD MINES for company names.
+- What trade publications, analyst reports, or market maps cover this sector?
 
 YOU MUST PERFORM LIVE WEB SEARCHES. Use your search tools and web grounding capabilities to find REAL, CURRENT articles and reports. Do NOT rely on your training data to generate company names. Every company you mention MUST come from a verifiable web source.
 
 Search broadly across news articles, industry reports, press releases, market analyses, funding announcements, and company directories. Find as many relevant companies as possible (target: ${targetCount}+).
+
+COVERAGE REQUIREMENTS:
+- Search for AT LEAST 15-25 distinct source URLs. More is better. Cast the WIDEST net possible.
+- Use MULTIPLE search queries with different angles: industry keywords, problem statements, market maps, competitor analyses, funding news, conference exhibitors, analyst reports, "top companies in X" lists, directory listings.
+- When you find a rich source (industry report, market analysis, ranked list, or article with tables of companies), MINE IT EXHAUSTIVELY. Extract EVERY company name from tables, rankings, lists, charts, and text mentions — not just the top 3-5.
+- Prioritize data-dense sources: industry reports with company tables, market landscape analyses, analyst reports with competitive landscapes, funding round-up articles listing multiple companies.
 
 REQUIRED OUTPUT FORMAT — Return a JSON object with a "findings" array. Each finding represents ONE source you searched:
 {
@@ -3036,17 +3054,18 @@ REQUIRED OUTPUT FORMAT — Return a JSON object with a "findings" array. Each fi
       "source_title": "Title of the article or report",
       "source_type": "news article | industry report | press release | funding announcement | market analysis | company directory | analyst report",
       "date_published": "YYYY-MM-DD or approximate date",
-      "content": "2-4 sentence summary of what this source covers and its relevance to the directive",
-      "companies_mentioned": ["Company A", "Company B", "Company C"]
+      "content": "3-5 sentence summary of what this source covers, what data it contains (e.g. tables, rankings, lists of companies), and its relevance to the directive. Be specific about what the source covers.",
+      "companies_mentioned": ["Company A", "Company B", "Company C", "...every single company name found"]
     }
   ]
 }
 
 CRITICAL RULES:
 - source_url MUST be a real URL from your web search results — not fabricated or from training data
-- companies_mentioned MUST list EVERY company name found in this source — including competitors, partners, vendors, and companies mentioned in passing
-- Include at least 5-10 distinct source URLs for comprehensive coverage
-- Each finding should have a real, verifiable source_url`
+- companies_mentioned MUST list EVERY SINGLE company name found in this source — if a report has a table with 30 companies, list ALL 30. If an article mentions 15 companies in passing, list ALL 15. Do NOT summarize or truncate the list.
+- Include at LEAST 15-25 distinct source URLs for comprehensive coverage — the more the better
+- Each finding should have a real, verifiable source_url
+- For data-rich sources (reports with tables, market maps, ranked lists): describe the structured data in the "content" field so the downstream extractor knows what to look for`
 
     const researchResult = await callAIAgent(researchMessage, DISCOVERY_RESEARCHER_ID)
     console.log('[runDirectPipeline] Researcher result success:', researchResult?.success)
@@ -3107,12 +3126,22 @@ CRITICAL RULES:
 ${geography ? `Geography focus: ${geography}.` : ''}
 ${industries ? `Target industries: ${industries}.` : ''}
 
-IMPORTANT: Extract EVERY company mentioned — even competitors, partners, vendors, or companies mentioned in passing.
+EXHAUSTIVE EXTRACTION RULES — THIS IS CRITICAL:
+1. Extract EVERY company mentioned — including competitors, partners, vendors, suppliers, investors, acquirers, subsidiaries, and companies mentioned in passing.
+2. When a source contains TABLES, RANKINGS, or LISTS of companies: extract EVERY SINGLE company from the table/list — do NOT skip any rows or entries. If a table has 30 companies, all 30 must appear in your output.
+3. When a source mentions an industry landscape or market map: extract ALL companies in that landscape/map.
+4. Do NOT filter companies by relevance during extraction. Extract ALL of them. The relevance_score field is where you rank them — but even low-relevance companies (score 1-3) should be included in the output.
+5. Company names that appear in different forms (e.g. "Amazon Web Services" and "AWS") should be captured as ONE company with the most complete name.
+6. If a source describes a structured dataset (e.g. "Table 1 shows 25 data center operators across APAC"), you MUST extract all entries from that structure — not just the ones the article focuses on.
 
 FOR EACH COMPANY PROVIDE:
-- name, industry, hq_location, estimated_size, website
-- relevance_score (1-10) based on the directive
-- relevance_reasoning: A crisp 1-2 sentence explanation of why this company is relevant
+- name: Full legal or commonly-known name
+- industry: Primary industry/sector
+- hq_location: Headquarters location (city, country if known)
+- estimated_size: Employee count or revenue range if available
+- website: Company website if available
+- relevance_score (1-10) based on how directly this company matches the directive
+- relevance_reasoning: A crisp 1-2 sentence explanation of why this company is relevant to the directive
 - source_urls: Array of 1-3 URLs where this company was mentioned in the research findings (use the actual article/report URLs from the sources above)
 - discovery_category: WHY this company was selected — use one of: "Recent Funding" | "Major News/Development" | "Industry Leader" | "Rapid Growth" | "Market Expansion" | "Leadership Change" | "Strategic Partnership" | "Acquisition Target" | "Emerging Player" | "Regulatory Impact" | "Directive Match"
 
@@ -3122,8 +3151,10 @@ ALSO RETURN a "discovery_sources" array documenting each source URL from the res
 - date_published: Publication date or "Unknown"
 - source_type: "news article" | "industry report" | "press release" | "funding announcement" | "market analysis" | "company directory" | "analyst report" | "regulatory filing" | "other"
 - key_finding: 1-2 sentence summary of what was found at this URL relevant to the directive
-- companies_found: Array of company names extracted from this specific source
+- companies_found: Array of ALL company names extracted from this specific source (must match every company you extracted that came from this source)
 - relevance_rationale: Why this source matters for the prospecting directive
+
+QUALITY CHECK: Before finalizing your output, re-read each source and verify you did not miss any company names — especially from tables, lists, and rankings. If a source mentions N companies, your companies_found for that source should have N entries.
 
 RESEARCH FINDINGS:
 ${truncatedFindings}`
@@ -3190,9 +3221,98 @@ ${truncatedFindings}`
       selected: true,
     })).filter((c: Company) => c.name.trim().length > 0)
 
-    // Deduplicate
-    const { deduplicated } = deduplicateCompanies(companies)
-    console.log(`[runDirectPipeline] Complete: ${deduplicated.length} unique companies extracted (${rawCompanies.length} raw, ${companies.length} valid)`)
+    // ── STEP 3: VALIDATION PASS ──
+    // Re-examine the research findings with the extracted company list.
+    // The validation agent checks for missed companies (especially from tables/lists)
+    // and verifies that extracted companies actually make sense for the directive.
+    console.log(`[runDirectPipeline] Starting validation pass with ${companies.length} companies from initial extraction`)
+    setActiveAgentId(COMPANY_EXTRACTOR_ID)
+
+    const extractedNames = companies.map(c => c.name).join(', ')
+    const validationMessage = `VALIDATION PASS — You are reviewing the output of a previous extraction. The directive is: "${campaign.directive}".
+${geography ? `Geography focus: ${geography}.` : ''}
+${industries ? `Target industries: ${industries}.` : ''}
+
+ALREADY EXTRACTED (${companies.length} companies): ${extractedNames}
+
+YOUR TASKS:
+1. RE-READ the research findings below carefully — especially any TABLES, RANKED LISTS, MARKET MAPS, or structured data.
+2. IDENTIFY any companies that were MISSED in the initial extraction. Pay special attention to:
+   - Companies buried in tables or lists that were not extracted
+   - Companies mentioned only in passing or in footnotes
+   - Subsidiaries, partners, or competitors of the main companies
+   - Companies in adjacent segments that are still relevant to the directive
+3. VERIFY that the already-extracted companies actually make sense for the directive. Flag any that seem irrelevant (e.g. a software company in a list about hardware manufacturers).
+4. For any NEW companies you find, provide the same fields as the initial extraction.
+
+RETURN a JSON object with:
+{
+  "missed_companies": [
+    { "name": "...", "industry": "...", "hq_location": "...", "estimated_size": "...", "website": "...", "relevance_score": 1-10, "relevance_reasoning": "...", "source_urls": ["..."], "discovery_category": "..." }
+  ],
+  "flagged_irrelevant": [
+    { "name": "...", "reason": "Why this company may not be relevant" }
+  ],
+  "validation_summary": "Brief summary: how many companies were reviewed, how many new ones found, any quality concerns"
+}
+
+If no missed companies are found, return an empty missed_companies array — that is a valid outcome.
+
+RESEARCH FINDINGS (re-read these carefully):
+${truncatedFindings}`
+
+    let validatedCompanies = [...companies]
+    try {
+      const validationResult = await callAIAgent(validationMessage, COMPANY_EXTRACTOR_ID)
+      if (validationResult?.success) {
+        const validationParsed = parseAgentResult(validationResult)
+        if (validationParsed) {
+          // Add any missed companies
+          const missedRaw = Array.isArray(validationParsed?.missed_companies) ? validationParsed.missed_companies : []
+          if (missedRaw.length > 0) {
+            console.log(`[runDirectPipeline] Validation found ${missedRaw.length} missed companies`)
+            const existingNames = new Set(companies.map(c => c.name.toLowerCase().trim()))
+            const missedCompanies: Company[] = missedRaw
+              .filter((c: any) => {
+                const name = (c?.name ?? '').toLowerCase().trim()
+                return name && !existingNames.has(name)
+              })
+              .map((c: any) => ({
+                name: c?.name ?? '',
+                industry: c?.industry ?? '',
+                hq_location: c?.hq_location ?? '',
+                estimated_size: c?.estimated_size ?? '',
+                relevance_score: typeof c?.relevance_score === 'number' ? c.relevance_score : 0,
+                relevance_reasoning: c?.relevance_reasoning ?? '',
+                website: c?.website ?? '',
+                source_segment: 'Validation Pass',
+                source_urls: Array.isArray(c?.source_urls) ? c.source_urls.filter((u: any) => typeof u === 'string' && u.trim()) : [],
+                discovery_category: c?.discovery_category ?? 'Directive Match',
+                selected: true,
+              }))
+            validatedCompanies = [...companies, ...missedCompanies]
+            console.log(`[runDirectPipeline] Added ${missedCompanies.length} new companies from validation (${validatedCompanies.length} total)`)
+          }
+
+          // Log flagged irrelevant companies (but don't remove them — let the user decide)
+          const flagged = Array.isArray(validationParsed?.flagged_irrelevant) ? validationParsed.flagged_irrelevant : []
+          if (flagged.length > 0) {
+            console.log(`[runDirectPipeline] Validation flagged ${flagged.length} potentially irrelevant companies:`, flagged.map((f: any) => f?.name).join(', '))
+          }
+
+          const summary = validationParsed?.validation_summary ?? ''
+          if (summary) console.log(`[runDirectPipeline] Validation summary: ${summary}`)
+        }
+      } else {
+        console.warn('[runDirectPipeline] Validation pass failed, continuing with initial extraction:', validationResult?.error)
+      }
+    } catch (validationErr) {
+      console.warn('[runDirectPipeline] Validation pass error (non-fatal), continuing with initial extraction:', validationErr)
+    }
+
+    // Deduplicate (including any companies added by validation pass)
+    const { deduplicated } = deduplicateCompanies(validatedCompanies)
+    console.log(`[runDirectPipeline] Complete: ${deduplicated.length} unique companies (${rawCompanies.length} initial raw, ${validatedCompanies.length} after validation)`)
 
     // CLIENT-SIDE cross-reference: map researcher findings URLs to companies by name matching
     // This is the reliable path — we don't trust the LLM to have populated source_urls correctly
@@ -3228,7 +3348,7 @@ ${truncatedFindings}`
         const segStrategy: SegmentStrategy[] = [{ segment_name: 'Web Research Pipeline', target_count: targetCount, actual_count: directResult.companies.length }]
         updateCampaign({
           ...campaign, companies: directResult.companies, stage: 'discovery',
-          searchSummary: `Discovered ${directResult.companies.length} companies via web research pipeline with ${withUrlsCount} source-verified.`,
+          searchSummary: `Discovered ${directResult.companies.length} companies via 3-step pipeline (research, extraction, validation) with ${withUrlsCount} source-verified.`,
           segmentationStrategy: segStrategy, duplicatesRemoved: 0, updatedAt: new Date().toISOString(),
           discoverySources: directResult.sources,
           searchDiagnostics: directResult.diagnostics,
