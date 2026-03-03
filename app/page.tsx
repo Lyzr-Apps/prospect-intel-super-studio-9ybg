@@ -210,6 +210,44 @@ interface CampaignFilters {
   targetCount?: number
 }
 
+// ─── SEARCH VERIFICATION DIAGNOSTICS ──────────────────────────────────────
+// These diagnostics capture hard evidence about whether the Researcher agent
+// actually performed live web searches vs. generating from training data.
+interface SearchDiagnostics {
+  // Timestamp of when the diagnostic was captured
+  capturedAt: string
+  // Pipeline path used: 'direct' or 'manager'
+  pipelinePath: 'direct' | 'manager'
+  // Raw response snippet (first 3000 chars) for manual inspection
+  rawResponseSnippet: string
+  // Agent ID that produced the research
+  researcherAgentId: string
+  // === Evidence Signals ===
+  // Did the response contain a structured "findings" array?
+  hasFindingsArray: boolean
+  findingsCount: number
+  // URL analysis
+  totalUrlsReturned: number
+  urlsWithValidFormat: number  // proper http(s):// with domain
+  urlsWithRealDomains: number  // domains that look real (not example.com, placeholder.com)
+  uniqueDomains: string[]      // list of unique domains found
+  // Date analysis
+  datesFound: string[]
+  datesIn2024OrLater: number
+  // Grounding / tool usage signals found in raw response
+  hasGroundingMetadata: boolean
+  hasSearchEntryPoint: boolean
+  hasToolCallTraces: boolean
+  hasSerpApiSignals: boolean
+  groundingSignals: string[]   // List of specific signals found
+  // Content quality signals
+  averageContentLength: number // avg chars per finding content field
+  findingsWithCompanyMentions: number // how many findings have companies_mentioned
+  // Overall confidence assessment
+  confidenceLevel: 'high' | 'medium' | 'low' | 'none'
+  confidenceReason: string
+}
+
 interface Campaign {
   id: string
   name: string
@@ -231,6 +269,7 @@ interface Campaign {
   duplicatesRemoved?: number
   enrichmentTime?: number
   discoverySources?: DiscoverySource[]
+  searchDiagnostics?: SearchDiagnostics
 }
 
 type AppView = 'dashboard' | 'campaign'
@@ -434,6 +473,135 @@ function crossReferenceSourceUrls(
     const allUrls = new Set([...existingUrls, ...matchedArr])
     return { ...co, source_urls: Array.from(allUrls).slice(0, 5) }
   })
+}
+
+// ─── SEARCH DIAGNOSTICS ANALYSIS ──────────────────────────────────────────────
+// Analyzes the raw Researcher response to determine whether a live web search
+// actually occurred. This checks for hard evidence, not just prompt compliance.
+function analyzeSearchDiagnostics(
+  researchResult: AIAgentResponse,
+  researchParsed: any,
+  pipelinePath: 'direct' | 'manager'
+): SearchDiagnostics {
+  const rawStr = typeof researchResult?.raw_response === 'string'
+    ? researchResult.raw_response
+    : JSON.stringify(researchResult ?? {})
+  const rawSnippet = rawStr.slice(0, 3000)
+
+  const findings = Array.isArray(researchParsed?.findings) ? researchParsed.findings : []
+  const hasFindingsArray = findings.length > 0
+
+  // ── URL Analysis ──
+  const allUrls: string[] = []
+  for (const f of findings) {
+    const url = f?.source_url ?? f?.url ?? ''
+    if (typeof url === 'string' && url.trim()) allUrls.push(url.trim())
+  }
+
+  const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.com', 'test.com', 'fake.com', 'samplesite.com', 'lorem.com', 'dummy.com']
+  const validFormatUrls = allUrls.filter(u => /^https?:\/\/[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(u))
+  const uniqueDomains: string[] = []
+  const domainSet = new Set<string>()
+  for (const u of validFormatUrls) {
+    try {
+      const domain = new URL(u).hostname.replace(/^www\./, '')
+      if (!domainSet.has(domain)) { domainSet.add(domain); uniqueDomains.push(domain) }
+    } catch { /* invalid URL */ }
+  }
+  const realDomains = uniqueDomains.filter(d => !PLACEHOLDER_DOMAINS.some(p => d.includes(p)))
+  const urlsWithRealDomains = validFormatUrls.filter(u => {
+    try { const d = new URL(u).hostname.replace(/^www\./, ''); return !PLACEHOLDER_DOMAINS.some(p => d.includes(p)) } catch { return false }
+  }).length
+
+  // ── Date Analysis ──
+  const datesFound: string[] = []
+  for (const f of findings) {
+    const d = f?.date_published ?? ''
+    if (typeof d === 'string' && d.trim() && d !== 'Unknown') datesFound.push(d.trim())
+  }
+  const datesIn2024OrLater = datesFound.filter(d => {
+    const year = parseInt(d.slice(0, 4), 10)
+    return !isNaN(year) && year >= 2024
+  }).length
+
+  // ── Grounding / Tool Usage Signals ──
+  // These are signals that the Lyzr/Gemini platform actually used search grounding or SERPAPI
+  const rawLower = rawStr.toLowerCase()
+  const groundingSignals: string[] = []
+
+  const hasGroundingMetadata = rawLower.includes('grounding_metadata') || rawLower.includes('groundingmetadata')
+  if (hasGroundingMetadata) groundingSignals.push('grounding_metadata present')
+
+  const hasSearchEntryPoint = rawLower.includes('search_entry_point') || rawLower.includes('searchentrypoint') || rawLower.includes('rendered_content')
+  if (hasSearchEntryPoint) groundingSignals.push('search_entry_point present')
+
+  const hasToolCallTraces = rawLower.includes('tool_call') || rawLower.includes('function_call') || rawLower.includes('tool_use') || rawLower.includes('tool_response')
+  if (hasToolCallTraces) groundingSignals.push('tool_call traces present')
+
+  const hasSerpApiSignals = rawLower.includes('serpapi') || rawLower.includes('serp_api') || rawLower.includes('organic_results') || rawLower.includes('search_results')
+  if (hasSerpApiSignals) groundingSignals.push('SERPAPI/search_results signals present')
+
+  // Additional Gemini grounding signals
+  if (rawLower.includes('grounding_chunk') || rawLower.includes('grounding_support')) groundingSignals.push('grounding_chunk/support present')
+  if (rawLower.includes('web_search_queries') || rawLower.includes('search_query')) groundingSignals.push('web_search_queries present')
+  if (rawLower.includes('retrieval_queries')) groundingSignals.push('retrieval_queries present')
+
+  // ── Content Quality ──
+  let totalContentLen = 0
+  let findingsWithCompanyMentions = 0
+  for (const f of findings) {
+    const content = f?.content ?? ''
+    if (typeof content === 'string') totalContentLen += content.length
+    if (Array.isArray(f?.companies_mentioned) && f.companies_mentioned.length > 0) findingsWithCompanyMentions++
+  }
+  const averageContentLength = findings.length > 0 ? Math.round(totalContentLen / findings.length) : 0
+
+  // ── Confidence Assessment ──
+  let confidenceLevel: 'high' | 'medium' | 'low' | 'none' = 'none'
+  let confidenceReason = ''
+
+  const hasAnyGroundingSignal = groundingSignals.length > 0
+  const hasRealUrls = urlsWithRealDomains >= 3
+  const hasDiverseDomains = realDomains.length >= 3
+  const hasRecentDates = datesIn2024OrLater >= 2
+
+  if (hasAnyGroundingSignal && hasRealUrls && hasDiverseDomains) {
+    confidenceLevel = 'high'
+    confidenceReason = `Platform-level search signals detected (${groundingSignals.join(', ')}). ${urlsWithRealDomains} real URLs across ${realDomains.length} unique domains.`
+  } else if (hasRealUrls && hasDiverseDomains && hasRecentDates) {
+    confidenceLevel = 'medium'
+    confidenceReason = `${urlsWithRealDomains} URLs with real domains across ${realDomains.length} unique sources, ${datesIn2024OrLater} dates from 2024+. No platform-level grounding signals detected in the response — the agent may have used search grounding, but the metadata was not propagated to the API response.`
+  } else if (hasRealUrls || hasFindingsArray) {
+    confidenceLevel = 'low'
+    confidenceReason = `${allUrls.length} URLs returned but limited domain diversity (${realDomains.length} unique domains). URLs could be from training data or fabricated. No platform search signals detected.`
+  } else {
+    confidenceLevel = 'none'
+    confidenceReason = 'No structured findings, no URLs, and no search/grounding signals detected. The agent likely generated output from training data without performing any live web search.'
+  }
+
+  return {
+    capturedAt: new Date().toISOString(),
+    pipelinePath,
+    rawResponseSnippet: rawSnippet,
+    researcherAgentId: DISCOVERY_RESEARCHER_ID,
+    hasFindingsArray,
+    findingsCount: findings.length,
+    totalUrlsReturned: allUrls.length,
+    urlsWithValidFormat: validFormatUrls.length,
+    urlsWithRealDomains,
+    uniqueDomains: realDomains.slice(0, 20),
+    datesFound: datesFound.slice(0, 20),
+    datesIn2024OrLater,
+    hasGroundingMetadata,
+    hasSearchEntryPoint,
+    hasToolCallTraces,
+    hasSerpApiSignals,
+    groundingSignals,
+    averageContentLength,
+    findingsWithCompanyMentions,
+    confidenceLevel,
+    confidenceReason,
+  }
 }
 
 // ─── MARKDOWN RENDERER ───────────────────────────────────────────────────────
@@ -1247,6 +1415,186 @@ function DiscoveryCategoryBadge({ category }: { category: string }) {
   )
 }
 
+// ─── SEARCH VERIFICATION PANEL ──────────────────────────────────────────────
+// Displays hard evidence about whether the Researcher agent performed live web
+// searches. This panel shows diagnostic data captured from the actual agent response.
+function SearchVerificationPanel({ diagnostics }: { diagnostics?: SearchDiagnostics }) {
+  const [expanded, setExpanded] = useState(false)
+  const [showRaw, setShowRaw] = useState(false)
+
+  if (!diagnostics) return null
+
+  const confidenceColors: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+    high: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200', dot: 'bg-green-500' },
+    medium: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500' },
+    low: { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200', dot: 'bg-orange-500' },
+    none: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200', dot: 'bg-red-500' },
+  }
+  const colors = confidenceColors[diagnostics.confidenceLevel] ?? confidenceColors.none
+
+  return (
+    <div className={`rounded-lg border overflow-hidden mb-5 ${colors.border} ${colors.bg}`}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-4 text-left flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <div className={`w-3 h-3 rounded-full flex-shrink-0 ${colors.dot}`} />
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className={`text-sm font-serif font-semibold ${colors.text}`}>
+                Search Verification: {diagnostics.confidenceLevel.charAt(0).toUpperCase() + diagnostics.confidenceLevel.slice(1)} Confidence
+              </h4>
+              <span className="text-xs text-muted-foreground">
+                via {diagnostics.pipelinePath === 'direct' ? 'Direct Pipeline' : 'Manager Agent'}
+              </span>
+            </div>
+            <p className={`text-xs mt-0.5 leading-relaxed ${colors.text} opacity-80`}>
+              {diagnostics.findingsCount} findings, {diagnostics.urlsWithRealDomains} verified URLs, {diagnostics.uniqueDomains.length} unique domains
+              {diagnostics.groundingSignals.length > 0 ? `, ${diagnostics.groundingSignals.length} platform signal(s)` : ''}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <FiAlertCircle className={`w-4 h-4 ${colors.text}`} />
+          {expanded ? <FiChevronUp className="w-4 h-4 text-muted-foreground" /> : <FiChevronDown className="w-4 h-4 text-muted-foreground" />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4">
+          {/* Confidence Assessment */}
+          <div className="bg-white/60 rounded-lg p-3 border border-border/20">
+            <h5 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Assessment</h5>
+            <p className="text-xs text-foreground leading-relaxed">{diagnostics.confidenceReason}</p>
+          </div>
+
+          {/* Key Metrics Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white/60 rounded-lg p-3 border border-border/20">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Findings</p>
+              <p className="text-lg font-bold text-foreground mt-1">{diagnostics.findingsCount}</p>
+              <p className="text-[10px] text-muted-foreground">{diagnostics.hasFindingsArray ? 'structured array' : 'no array found'}</p>
+            </div>
+            <div className="bg-white/60 rounded-lg p-3 border border-border/20">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">URLs</p>
+              <p className="text-lg font-bold text-foreground mt-1">{diagnostics.urlsWithRealDomains}<span className="text-sm font-normal text-muted-foreground">/{diagnostics.totalUrlsReturned}</span></p>
+              <p className="text-[10px] text-muted-foreground">real / total returned</p>
+            </div>
+            <div className="bg-white/60 rounded-lg p-3 border border-border/20">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Unique Domains</p>
+              <p className="text-lg font-bold text-foreground mt-1">{diagnostics.uniqueDomains.length}</p>
+              <p className="text-[10px] text-muted-foreground">{diagnostics.uniqueDomains.length >= 3 ? 'diverse sources' : 'limited diversity'}</p>
+            </div>
+            <div className="bg-white/60 rounded-lg p-3 border border-border/20">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Recent Dates</p>
+              <p className="text-lg font-bold text-foreground mt-1">{diagnostics.datesIn2024OrLater}<span className="text-sm font-normal text-muted-foreground">/{diagnostics.datesFound.length}</span></p>
+              <p className="text-[10px] text-muted-foreground">2024+ / total dates</p>
+            </div>
+          </div>
+
+          {/* Platform Search Signals */}
+          <div className="bg-white/60 rounded-lg p-3 border border-border/20">
+            <h5 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Platform Search Signals</h5>
+            <p className="text-[10px] text-muted-foreground mb-2">
+              These signals indicate whether the Lyzr/Gemini platform actually invoked search tools (SERPAPI, Google Search Grounding).
+              Their presence in the API response is strong evidence of live search. Their absence does not necessarily mean no search occurred — some platforms strip tool metadata from the response.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: 'Google Grounding Metadata', present: diagnostics.hasGroundingMetadata },
+                { label: 'Search Entry Point', present: diagnostics.hasSearchEntryPoint },
+                { label: 'Tool Call Traces', present: diagnostics.hasToolCallTraces },
+                { label: 'SERPAPI / Search Results', present: diagnostics.hasSerpApiSignals },
+              ].map(signal => (
+                <div key={signal.label} className="flex items-center gap-2 text-xs">
+                  {signal.present ? (
+                    <FiCheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                  ) : (
+                    <FiX className="w-3.5 h-3.5 text-muted-foreground/50 flex-shrink-0" />
+                  )}
+                  <span className={signal.present ? 'text-foreground font-medium' : 'text-muted-foreground'}>{signal.label}</span>
+                </div>
+              ))}
+            </div>
+            {diagnostics.groundingSignals.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-border/20">
+                <p className="text-[10px] text-muted-foreground mb-1">Detected signals:</p>
+                <div className="flex flex-wrap gap-1">
+                  {diagnostics.groundingSignals.map((signal, i) => (
+                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-green-100 text-green-800 font-medium">{signal}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Domains Found */}
+          {diagnostics.uniqueDomains.length > 0 && (
+            <div className="bg-white/60 rounded-lg p-3 border border-border/20">
+              <h5 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Domains in Source URLs ({diagnostics.uniqueDomains.length})</h5>
+              <div className="flex flex-wrap gap-1.5">
+                {diagnostics.uniqueDomains.map((domain, i) => (
+                  <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-muted/50 text-foreground font-mono">{domain}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Content Quality */}
+          <div className="bg-white/60 rounded-lg p-3 border border-border/20">
+            <h5 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Content Quality Indicators</h5>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-muted-foreground">Avg content length per finding: </span>
+                <span className="font-medium text-foreground">{diagnostics.averageContentLength} chars</span>
+                <span className="text-[10px] text-muted-foreground ml-1">({diagnostics.averageContentLength > 100 ? 'substantive' : diagnostics.averageContentLength > 30 ? 'brief' : 'minimal'})</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Findings with company mentions: </span>
+                <span className="font-medium text-foreground">{diagnostics.findingsWithCompanyMentions}/{diagnostics.findingsCount}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Raw Response Inspector */}
+          <div>
+            <button
+              onClick={() => setShowRaw(!showRaw)}
+              className="flex items-center gap-1 text-xs text-primary font-medium hover:underline"
+            >
+              <FiDatabase className="w-3 h-3" />
+              {showRaw ? 'Hide' : 'Show'} Raw Response Snippet
+              {showRaw ? <FiChevronUp className="w-3 h-3" /> : <FiChevronDown className="w-3 h-3" />}
+            </button>
+            {showRaw && (
+              <div className="mt-2 bg-white/60 rounded-lg border border-border/20 overflow-hidden">
+                <div className="p-2 border-b border-border/20 flex items-center justify-between">
+                  <span className="text-[10px] text-muted-foreground font-mono">
+                    First 3000 chars of Researcher raw response (Agent: {diagnostics.researcherAgentId})
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">{diagnostics.capturedAt}</span>
+                </div>
+                <pre className="p-3 text-[10px] text-foreground/80 font-mono whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto leading-relaxed">
+                  {diagnostics.rawResponseSnippet}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          {/* Honest Disclaimer */}
+          <div className="text-[10px] text-muted-foreground leading-relaxed border-t border-border/20 pt-3">
+            <strong>What this panel measures:</strong> Whether the agent&apos;s raw API response contains evidence of live web search execution.
+            SERPAPI (Composio integration) and Google Search Grounding (Gemini-native) are configured on the Discovery Researcher agent.
+            If platform signals are absent, it may mean (a) the platform stripped tool metadata from responses, (b) tools were configured but not invoked for this query, or (c) the agent generated output from training data.
+            The most reliable evidence is diverse, real domains in source URLs combined with recent dates and substantive content.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── SOURCE PROVENANCE PANEL ─────────────────────────────────────────────────
 const SOURCE_TYPE_ICONS: Record<string, React.ElementType> = {
   'news article': FiFlag,
@@ -1805,6 +2153,9 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
           </div>
         </div>
       )}
+
+      {/* Search Verification — hard evidence of whether live web search occurred */}
+      {!loading && <SearchVerificationPanel diagnostics={campaign.searchDiagnostics} />}
 
       {/* Source Provenance Panel — shows what each URL contributed */}
       {!loading && <SourceProvenancePanel sources={campaign.discoverySources ?? []} companies={companies} />}
@@ -2650,7 +3001,7 @@ export default function Page() {
   // ─ Direct Pipeline Fallback ─
   // When the Manager agent fails to consolidate results, this function
   // directly orchestrates Researcher → Extractor from the frontend.
-  const runDirectPipeline = useCallback(async (campaign: Campaign): Promise<{ companies: Company[]; sources: DiscoverySource[] }> => {
+  const runDirectPipeline = useCallback(async (campaign: Campaign): Promise<{ companies: Company[]; sources: DiscoverySource[]; diagnostics?: SearchDiagnostics }> => {
     const targetCount = campaign.filters?.targetCount ?? 50
     const geography = campaign.filters?.geography || ''
     const industries = campaign.filters?.industries?.join(', ') || ''
@@ -2711,6 +3062,12 @@ CRITICAL RULES:
     if (!researchParsed) {
       throw new Error('Failed to parse Researcher results')
     }
+
+    // ── SEARCH VERIFICATION DIAGNOSTICS ──
+    // Capture hard evidence about whether a live web search actually occurred.
+    // This is analyzed client-side from the raw Researcher response.
+    const diagnostics = analyzeSearchDiagnostics(researchResult, researchParsed, 'direct')
+    console.log(`[runDirectPipeline] Search Diagnostics: confidence=${diagnostics.confidenceLevel}, findings=${diagnostics.findingsCount}, urls=${diagnostics.totalUrlsReturned} (${diagnostics.urlsWithRealDomains} real), domains=${diagnostics.uniqueDomains.length}, groundingSignals=[${diagnostics.groundingSignals.join(', ')}]`)
 
     // Build the findings text to pass to the Extractor
     let findingsText = ''
@@ -2799,7 +3156,7 @@ ${truncatedFindings}`
         }
         console.log('[runDirectPipeline] Salvaged', salvaged.length, 'companies from Researcher findings')
         const salvagedSources = extractDiscoverySources({}, researchParsed)
-        return { companies: salvaged, sources: salvagedSources }
+        return { companies: salvaged, sources: salvagedSources, diagnostics }
       }
       throw new Error('Company Name Extractor failed: ' + (extractResult?.error || 'Unknown error'))
     }
@@ -2845,7 +3202,7 @@ ${truncatedFindings}`
 
     // Extract source provenance from both extractor and researcher results
     const directSources = extractDiscoverySources(extractParsed, researchParsed)
-    return { companies: enrichedWithUrls, sources: directSources }
+    return { companies: enrichedWithUrls, sources: directSources, diagnostics }
   }, [updateCampaign])
 
   // ─ Agent Calls ─
@@ -2874,6 +3231,7 @@ ${truncatedFindings}`
           searchSummary: `Discovered ${directResult.companies.length} companies via web research pipeline with ${withUrlsCount} source-verified.`,
           segmentationStrategy: segStrategy, duplicatesRemoved: 0, updatedAt: new Date().toISOString(),
           discoverySources: directResult.sources,
+          searchDiagnostics: directResult.diagnostics,
         })
         setLoading(false)
         setActiveAgentId(null)
@@ -3046,10 +3404,14 @@ Cast the widest net possible - extract companies from news articles, press relea
         : []
       const duplicatesRemoved = typeof parsed?.duplicates_removed === 'number' ? parsed.duplicates_removed : 0
       const discoverySources = extractDiscoverySources(parsed)
+      // Capture diagnostics from Manager response (less granular than direct pipeline, but still useful)
+      const managerDiagnostics = analyzeSearchDiagnostics(result, parsed, 'manager')
+      console.log(`[runDiscovery] Manager Search Diagnostics: confidence=${managerDiagnostics.confidenceLevel}, findings=${managerDiagnostics.findingsCount}, urls=${managerDiagnostics.totalUrlsReturned}`)
       updateCampaign({
         ...campaign, companies: companiesWithUrls, stage: 'discovery', searchSummary: parsed?.search_summary ?? '',
         segmentationStrategy, duplicatesRemoved, updatedAt: new Date().toISOString(),
         discoverySources,
+        searchDiagnostics: managerDiagnostics,
       })
     } catch (err) {
       console.error('[runDiscovery] Exception:', err)
