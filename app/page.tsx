@@ -2089,6 +2089,35 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
   const selectedCount = companies.filter(c => c.selected).length
   const [showUpload, setShowUpload] = useState(false)
   const [lastImportInfo, setLastImportInfo] = useState<{ imported: number; duplicates: number } | null>(null)
+  const [sortField, setSortField] = useState<'name' | 'industry' | 'hq_location' | 'estimated_size' | 'relevance_score'>('relevance_score')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  const toggleSort = useCallback((field: typeof sortField) => {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir(field === 'relevance_score' ? 'desc' : 'asc')
+    }
+  }, [sortField])
+
+  const sortedCompanies = useMemo(() => {
+    const sorted = [...companies].sort((a, b) => {
+      let aVal: string | number = ''
+      let bVal: string | number = ''
+      if (sortField === 'relevance_score') {
+        aVal = a.relevance_score ?? 0
+        bVal = b.relevance_score ?? 0
+      } else {
+        aVal = (a[sortField] ?? '').toLowerCase()
+        bVal = (b[sortField] ?? '').toLowerCase()
+      }
+      if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return sorted
+  }, [companies, sortField, sortDir])
 
   const handleImport = useCallback((imported: Company[], _duplicateCount: number) => {
     // Merge with existing companies and deduplicate
@@ -2210,7 +2239,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">Step 1: Web Research</p>
-                <p className="text-xs text-muted-foreground">Searching 15-25+ sources across news, industry reports, press releases, market maps, ranked lists, and directories...</p>
+                <p className="text-xs text-muted-foreground">Searching across news, industry reports, directories, and market analyses...</p>
               </div>
             </div>
             <div className="ml-3 w-px h-4 bg-border/40" />
@@ -2219,28 +2248,8 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                 <FiLayers className="w-3 h-3 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Step 2: Exhaustive Extraction</p>
-                <p className="text-xs text-muted-foreground">Extracting every company from search results, including all entries from tables, rankings, and structured data</p>
-              </div>
-            </div>
-            <div className="ml-3 w-px h-4 bg-border/40" />
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-muted/40 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <FiCheckCircle className="w-3 h-3 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Step 3: Validation Pass</p>
-                <p className="text-xs text-muted-foreground">Re-reading sources to catch missed companies, especially from tables and lists, and verifying relevance to directive</p>
-              </div>
-            </div>
-            <div className="ml-3 w-px h-4 bg-border/40" />
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-muted/40 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <FiDatabase className="w-3 h-3 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Step 4: Deduplication & Scoring</p>
-                <p className="text-xs text-muted-foreground">Merging all results, removing duplicates, cross-referencing source URLs, and scoring for relevance</p>
+                <p className="text-sm font-medium text-muted-foreground">Step 2: Extract, Score & Rank</p>
+                <p className="text-xs text-muted-foreground">Extracting company names, scoring relevance to your directive, and ranking the top {campaign.filters?.targetCount ?? 50} matches</p>
               </div>
             </div>
           </div>
@@ -2254,7 +2263,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
         <div className="text-center py-16 bg-card rounded-lg border border-border/30">
           <FiSearch className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">Ready to discover companies</h3>
-          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">The Discovery pipeline will search the web, extract every company name from articles and reports, and build a deduplicated prospect list of up to {campaign.filters?.targetCount ?? 50}+ companies.</p>
+          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">The Discovery pipeline will search the web for articles and reports, extract company names, score them for relevance, and return the top {campaign.filters?.targetCount ?? 50} matches.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
               <FiSearch className="w-4 h-4" /> Generate Prospect List
@@ -2293,17 +2302,33 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                 <thead>
                   <tr className="border-b border-border/30 text-left">
                     <th className="p-3 w-10"></th>
-                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide">Company</th>
-                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden md:table-cell">Industry</th>
-                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden lg:table-cell">Location</th>
-                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden lg:table-cell">Size</th>
-                    <th className="p-3 font-serif font-semibold text-foreground tracking-wide">Relevance</th>
+                    {([
+                      { field: 'name' as const, label: 'Company', className: '' },
+                      { field: 'industry' as const, label: 'Industry', className: 'hidden md:table-cell' },
+                      { field: 'hq_location' as const, label: 'Location', className: 'hidden lg:table-cell' },
+                      { field: 'estimated_size' as const, label: 'Size', className: 'hidden lg:table-cell' },
+                      { field: 'relevance_score' as const, label: 'Relevance', className: '' },
+                    ] as const).map(col => (
+                      <th key={col.field} className={`p-3 ${col.className}`}>
+                        <button
+                          onClick={() => toggleSort(col.field)}
+                          className="flex items-center gap-1 font-serif font-semibold text-foreground tracking-wide hover:text-primary transition-colors group"
+                        >
+                          {col.label}
+                          {sortField === col.field ? (
+                            sortDir === 'asc' ? <FiChevronUp className="w-3.5 h-3.5 text-primary" /> : <FiChevronDown className="w-3.5 h-3.5 text-primary" />
+                          ) : (
+                            <FiChevronDown className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/60" />
+                          )}
+                        </button>
+                      </th>
+                    ))}
                     <th className="p-3 font-serif font-semibold text-foreground tracking-wide hidden xl:table-cell">Why Selected</th>
                     <th className="p-3 w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {companies.map(co => (
+                  {sortedCompanies.map(co => (
                     <React.Fragment key={co.name}>
                       <tr className={`border-b border-border/20 hover:bg-muted/30 transition-colors cursor-pointer ${co.selected ? 'bg-primary/5' : ''}`}>
                         <td className="p-3">
@@ -3020,33 +3045,12 @@ export default function Page() {
     console.log('[runDirectPipeline] Starting direct Researcher → Extractor pipeline')
     setActiveAgentId(DISCOVERY_RESEARCHER_ID)
 
-    // Step 1: Call Discovery Researcher with the campaign directive + semantic search
-    const researchMessage = `Search directive: ${campaign.directive}.
-${geography ? `Geography: ${geography}.` : ''}${industries ? ` Industries: ${industries}.` : ''}${sizeRange ? ` Size: ${sizeRange}.` : ''}
-Date: ${new Date().toISOString().split('T')[0]}. Sources from 2024+ only.
+    // Step 1: Call Discovery Researcher — short, fast prompt
+    const researchMessage = `Find companies matching: ${campaign.directive}.${geography ? ` Geography: ${geography}.` : ''}${industries ? ` Industries: ${industries}.` : ''}${sizeRange ? ` Size: ${sizeRange}.` : ''} Date: ${new Date().toISOString().split('T')[0]}.
 
-TASK: Search the web for companies matching this directive. Use multiple search queries from different angles (keywords, "top companies in X" lists, funding news, market reports, industry directories). Target ${targetCount}+ companies across 10-20 sources.
+Search the web. Return JSON: { "findings": [{ "source_url": "https://...", "source_title": "...", "source_type": "news article|industry report|press release|funding announcement|market analysis|company directory|analyst report", "date_published": "YYYY-MM-DD", "content": "brief summary", "companies_mentioned": ["Company A", "Company B"] }] }
 
-When you find a source with tables or lists of companies, list ALL companies from those tables — not just the top few.
-
-Return JSON with a "findings" array:
-{
-  "findings": [
-    {
-      "source_url": "https://real-url.com/...",
-      "source_title": "Title",
-      "source_type": "news article | industry report | press release | funding announcement | market analysis | company directory | analyst report",
-      "date_published": "YYYY-MM-DD",
-      "content": "Brief summary of source and what it covers",
-      "companies_mentioned": ["Company A", "Company B", "...all companies found"]
-    }
-  ]
-}
-
-RULES:
-- Use REAL URLs from search results only
-- List ALL companies found per source — do not truncate
-- Aim for 10-20 distinct source URLs`
+Rules: real URLs only, list all companies per source, 5-10 sources.`
 
     const researchResult = await callAIAgent(researchMessage, DISCOVERY_RESEARCHER_ID)
     console.log('[runDirectPipeline] Researcher result success:', researchResult?.success)
@@ -3103,19 +3107,20 @@ RULES:
       ? findingsText.slice(0, maxLen) + '\n\n[...truncated for length]'
       : findingsText
 
-    const extractMessage = `Extract ALL company names from these research findings. Directive: "${campaign.directive}".
-${geography ? `Geography: ${geography}.` : ''}${industries ? ` Industries: ${industries}.` : ''}
+    const extractMessage = `Extract company names from these findings. Directive: "${campaign.directive}".${geography ? ` Geography: ${geography}.` : ''}${industries ? ` Industries: ${industries}.` : ''}
 
-KEY RULES:
-- Extract EVERY company — including those in tables, lists, rankings, and mentioned in passing
-- Do NOT filter by relevance — include all, use relevance_score to rank them
-- If a table has 30 companies, extract all 30
+Return the top ${targetCount} most relevant companies. Score each 1-10 based on how closely they match the directive:
+- 9-10: Directly matches the directive's core criteria (industry, geography, size, use case)
+- 7-8: Strong match with most criteria met
+- 5-6: Partial match, some criteria met
+- 3-4: Tangential or loosely related
+- 1-2: Barely relevant, only mentioned in passing
 
-PER COMPANY: name, industry, hq_location, estimated_size, website, relevance_score (1-10), relevance_reasoning, source_urls (array of URLs where found), discovery_category (one of: "Recent Funding" | "Major News/Development" | "Industry Leader" | "Rapid Growth" | "Market Expansion" | "Leadership Change" | "Strategic Partnership" | "Acquisition Target" | "Emerging Player" | "Regulatory Impact" | "Directive Match")
+PER COMPANY: name, industry, hq_location, estimated_size, website, relevance_score (1-10), relevance_reasoning (1 sentence why this score), source_urls (array), discovery_category ("Recent Funding"|"Major News/Development"|"Industry Leader"|"Rapid Growth"|"Market Expansion"|"Leadership Change"|"Strategic Partnership"|"Acquisition Target"|"Emerging Player"|"Regulatory Impact"|"Directive Match")
 
-ALSO RETURN "discovery_sources" array: for each source URL include url, title, date_published, source_type, key_finding, companies_found (all company names from that source), relevance_rationale.
+ALSO RETURN "discovery_sources" array: per source URL include url, title, date_published, source_type, key_finding, companies_found (array), relevance_rationale.
 
-RESEARCH FINDINGS:
+FINDINGS:
 ${truncatedFindings}`
 
     const extractResult = await callAIAgent(extractMessage, COMPANY_EXTRACTOR_ID)
@@ -3180,78 +3185,17 @@ ${truncatedFindings}`
       selected: true,
     })).filter((c: Company) => c.name.trim().length > 0)
 
-    // ── STEP 3: CONDITIONAL VALIDATION PASS ──
-    // Only run validation if initial extraction found fewer companies than half the target.
-    // This avoids an extra agent call when extraction already performed well.
-    let validatedCompanies = [...companies]
-    const validationThreshold = Math.max(Math.floor(targetCount * 0.4), 8)
-    const shouldValidate = companies.length < validationThreshold
-
-    if (shouldValidate) {
-      console.log(`[runDirectPipeline] Extraction found ${companies.length} companies (below threshold ${validationThreshold}). Running validation pass.`)
-      setActiveAgentId(COMPANY_EXTRACTOR_ID)
-
-      const extractedNames = companies.map(c => c.name).join(', ')
-      const validationMessage = `Find any MISSED companies from these research findings. Directive: "${campaign.directive}".
-Already extracted (${companies.length}): ${extractedNames}
-
-Scan the findings for companies that were missed — especially from tables, lists, and passing mentions. Return JSON:
-{ "missed_companies": [{ "name": "...", "industry": "...", "hq_location": "...", "estimated_size": "...", "website": "...", "relevance_score": 1-10, "relevance_reasoning": "...", "source_urls": ["..."], "discovery_category": "..." }], "validation_summary": "brief summary" }
-
-FINDINGS:
-${truncatedFindings}`
-
-      try {
-        const validationResult = await callAIAgent(validationMessage, COMPANY_EXTRACTOR_ID)
-        if (validationResult?.success) {
-          const validationParsed = parseAgentResult(validationResult)
-          if (validationParsed) {
-            const missedRaw = Array.isArray(validationParsed?.missed_companies) ? validationParsed.missed_companies : []
-            if (missedRaw.length > 0) {
-              console.log(`[runDirectPipeline] Validation found ${missedRaw.length} missed companies`)
-              const existingNames = new Set(companies.map(c => c.name.toLowerCase().trim()))
-              const missedCompanies: Company[] = missedRaw
-                .filter((c: any) => {
-                  const name = (c?.name ?? '').toLowerCase().trim()
-                  return name && !existingNames.has(name)
-                })
-                .map((c: any) => ({
-                  name: c?.name ?? '',
-                  industry: c?.industry ?? '',
-                  hq_location: c?.hq_location ?? '',
-                  estimated_size: c?.estimated_size ?? '',
-                  relevance_score: typeof c?.relevance_score === 'number' ? c.relevance_score : 0,
-                  relevance_reasoning: c?.relevance_reasoning ?? '',
-                  website: c?.website ?? '',
-                  source_segment: 'Validation Pass',
-                  source_urls: Array.isArray(c?.source_urls) ? c.source_urls.filter((u: any) => typeof u === 'string' && u.trim()) : [],
-                  discovery_category: c?.discovery_category ?? 'Directive Match',
-                  selected: true,
-                }))
-              validatedCompanies = [...companies, ...missedCompanies]
-              console.log(`[runDirectPipeline] Added ${missedCompanies.length} new companies from validation (${validatedCompanies.length} total)`)
-            }
-            const summary = validationParsed?.validation_summary ?? ''
-            if (summary) console.log(`[runDirectPipeline] Validation summary: ${summary}`)
-          }
-        } else {
-          console.warn('[runDirectPipeline] Validation pass failed, continuing with initial extraction:', validationResult?.error)
-        }
-      } catch (validationErr) {
-        console.warn('[runDirectPipeline] Validation pass error (non-fatal), continuing with initial extraction:', validationErr)
-      }
-    } else {
-      console.log(`[runDirectPipeline] Extraction found ${companies.length} companies (above threshold ${validationThreshold}). Skipping validation pass.`)
-    }
-
-    // Deduplicate (including any companies added by validation pass)
-    const { deduplicated } = deduplicateCompanies(validatedCompanies)
-    console.log(`[runDirectPipeline] Complete: ${deduplicated.length} unique companies (${rawCompanies.length} initial raw, ${validatedCompanies.length} after validation)`)
+    // Deduplicate and sort by relevance, then cap at target count
+    const { deduplicated } = deduplicateCompanies(companies)
+    // Sort by relevance score descending, then cap to target count
+    deduplicated.sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0))
+    const capped = deduplicated.slice(0, targetCount)
+    console.log(`[runDirectPipeline] Complete: ${capped.length} companies (${rawCompanies.length} raw, ${deduplicated.length} deduped, capped to ${targetCount})`)
 
     // CLIENT-SIDE cross-reference: map researcher findings URLs to companies by name matching
     // This is the reliable path — we don't trust the LLM to have populated source_urls correctly
     const researcherFindings = Array.isArray(researchParsed?.findings) ? researchParsed.findings : []
-    const enrichedWithUrls = crossReferenceSourceUrls(deduplicated, researcherFindings)
+    const enrichedWithUrls = crossReferenceSourceUrls(capped, researcherFindings)
     console.log(`[runDirectPipeline] Cross-referenced source URLs. Companies with URLs: ${enrichedWithUrls.filter(c => c.source_urls && c.source_urls.length > 0).length}/${enrichedWithUrls.length}`)
 
     // Extract source provenance from both extractor and researcher results
@@ -3282,7 +3226,7 @@ ${truncatedFindings}`
         const segStrategy: SegmentStrategy[] = [{ segment_name: 'Web Research Pipeline', target_count: targetCount, actual_count: directResult.companies.length }]
         updateCampaign({
           ...campaign, companies: directResult.companies, stage: 'discovery',
-          searchSummary: `Discovered ${directResult.companies.length} companies via 3-step pipeline (research, extraction, validation) with ${withUrlsCount} source-verified.`,
+          searchSummary: `Discovered ${directResult.companies.length} companies via web research pipeline with ${withUrlsCount} source-verified.`,
           segmentationStrategy: segStrategy, duplicatesRemoved: 0, updatedAt: new Date().toISOString(),
           discoverySources: directResult.sources,
           searchDiagnostics: directResult.diagnostics,
