@@ -2230,7 +2230,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
       {loading && (
         <div className="bg-card rounded-lg border border-border/30 overflow-hidden mb-5">
           <div className="p-4 border-b border-border/20 flex items-center gap-2 text-sm text-primary font-medium">
-            <FiRefreshCw className="w-4 h-4 animate-spin" /> Discovery Pipeline Active
+            <FiRefreshCw className="w-4 h-4 animate-spin" /> Hybrid Discovery Pipeline Active
           </div>
           <div className="p-4 space-y-3">
             <div className="flex items-start gap-3">
@@ -2248,8 +2248,18 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                 <FiLayers className="w-3 h-3 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Step 2: Extract, Score & Rank</p>
-                <p className="text-xs text-muted-foreground">Extracting company names, scoring relevance to your directive, and ranking the top {campaign.filters?.targetCount ?? 50} matches</p>
+                <p className="text-sm font-medium text-muted-foreground">Step 2: Extract & Score Web Results</p>
+                <p className="text-xs text-muted-foreground">Extracting company names from web findings and scoring relevance...</p>
+              </div>
+            </div>
+            <div className="ml-3 w-px h-4 bg-border/40" />
+            <div className="flex items-start gap-3">
+              <div className="w-6 h-6 rounded-full bg-muted/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <HiOutlineSparkles className="w-3 h-3 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Step 3: Training Data Complement</p>
+                <p className="text-xs text-muted-foreground">Augmenting with known companies from AI training knowledge, then merging and ranking top {campaign.filters?.targetCount ?? 50}</p>
               </div>
             </div>
           </div>
@@ -2263,7 +2273,7 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
         <div className="text-center py-16 bg-card rounded-lg border border-border/30">
           <FiSearch className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">Ready to discover companies</h3>
-          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">The Discovery pipeline will search the web for articles and reports, extract company names, score them for relevance, and return the top {campaign.filters?.targetCount ?? 50} matches.</p>
+          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto leading-relaxed">The hybrid Discovery pipeline searches the web for articles and reports, then complements results with AI training knowledge to build a comprehensive list of the top {campaign.filters?.targetCount ?? 50} matches.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
               <FiSearch className="w-4 h-4" /> Generate Prospect List
@@ -2284,6 +2294,18 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                 <FiCheck className="w-3.5 h-3.5" /> {companies.every(c => c.selected) ? 'Deselect All' : 'Select All'}
               </button>
               <span className="text-sm text-muted-foreground">{selectedCount} of {companies.length} selected</span>
+              {companies.some(c => c.source_segment === 'Web Search') && (
+                <InlineBadge variant="default">
+                  <FiGlobe className="w-3 h-3 mr-0.5" />
+                  {companies.filter(c => c.source_segment === 'Web Search').length} web
+                </InlineBadge>
+              )}
+              {companies.some(c => c.source_segment === 'Training Data') && (
+                <InlineBadge variant="muted">
+                  <HiOutlineSparkles className="w-3 h-3 mr-0.5" />
+                  {companies.filter(c => c.source_segment === 'Training Data').length} AI
+                </InlineBadge>
+              )}
               {companies.some(c => c.source_segment === 'File Upload') && (
                 <InlineBadge variant="accent">
                   <FiUpload className="w-3 h-3 mr-0.5" />
@@ -2348,7 +2370,12 @@ function DiscoveryView({ campaign, onUpdateCampaign, loading, error, onRetry, on
                         <td className="p-3 text-muted-foreground hidden lg:table-cell"><span className="flex items-center gap-1"><FiMapPin className="w-3 h-3" /> {co.hq_location}</span></td>
                         <td className="p-3 text-muted-foreground hidden lg:table-cell">{co.estimated_size}</td>
                         <td className="p-3"><RelevanceBar score={co.relevance_score} /></td>
-                        <td className="p-3 hidden xl:table-cell">{co.source_segment === 'File Upload' ? <InlineBadge variant="accent"><FiUpload className="w-3 h-3 mr-0.5" />Uploaded</InlineBadge> : co.discovery_category ? <DiscoveryCategoryBadge category={co.discovery_category} /> : co.source_segment ? <InlineBadge variant="muted">{co.source_segment}</InlineBadge> : <span className="text-xs text-muted-foreground">-</span>}</td>
+                        <td className="p-3 hidden xl:table-cell">
+                          <div className="flex items-center gap-1.5">
+                            {co.source_segment === 'Training Data' && <InlineBadge variant="muted"><HiOutlineSparkles className="w-3 h-3 mr-0.5" />AI</InlineBadge>}
+                            {co.source_segment === 'File Upload' ? <InlineBadge variant="accent"><FiUpload className="w-3 h-3 mr-0.5" />Uploaded</InlineBadge> : co.discovery_category ? <DiscoveryCategoryBadge category={co.discovery_category} /> : co.source_segment && co.source_segment !== 'Training Data' ? <InlineBadge variant="muted">{co.source_segment}</InlineBadge> : !co.source_segment ? <span className="text-xs text-muted-foreground">-</span> : null}
+                          </div>
+                        </td>
                         <td className="p-3">
                           <div className="flex items-center gap-1">
                             <button onClick={() => setExpandedRow(expandedRow === co.name ? null : co.name)} className="p-1 rounded hover:bg-muted text-muted-foreground">
@@ -3185,22 +3212,87 @@ ${truncatedFindings}`
       selected: true,
     })).filter((c: Company) => c.name.trim().length > 0)
 
-    // Deduplicate and sort by relevance, then cap at target count
-    const { deduplicated } = deduplicateCompanies(companies)
+    // Label web-sourced companies
+    const webCompanies: Company[] = companies.map(c => ({
+      ...c,
+      source_segment: c.source_segment || 'Web Search',
+    }))
+
+    // CLIENT-SIDE cross-reference: map researcher findings URLs to companies by name matching
+    const researcherFindings = Array.isArray(researchParsed?.findings) ? researchParsed.findings : []
+    const enrichedWithUrls = crossReferenceSourceUrls(webCompanies, researcherFindings)
+    console.log(`[runDirectPipeline] Web pass: ${enrichedWithUrls.length} companies, ${enrichedWithUrls.filter(c => c.source_urls && c.source_urls.length > 0).length} with source URLs`)
+
+    // ── Step 3: Training Data Pass ──
+    // Ask the Extractor to generate additional companies from its training knowledge
+    // that match the directive but were NOT found in the web search.
+    setActiveAgentId(COMPANY_EXTRACTOR_ID)
+    const webNames = enrichedWithUrls.map(c => c.name)
+    const trainingDataNeeded = Math.max(Math.ceil(targetCount * 0.4), 5) // Fill up to 40% from training data if web didn't cover enough
+
+    const trainingMessage = `Generate ${trainingDataNeeded} companies from your training knowledge that match this directive: "${campaign.directive}".${geography ? ` Geography: ${geography}.` : ''}${industries ? ` Industries: ${industries}.` : ''}${sizeRange ? ` Size: ${sizeRange}.` : ''}
+
+ALREADY FOUND (do NOT repeat these): ${webNames.slice(0, 80).join(', ')}
+
+Use your knowledge of real companies. Score each 1-10:
+- 9-10: Directly matches the directive's core criteria
+- 7-8: Strong match with most criteria met
+- 5-6: Partial match, some criteria met
+- 3-4: Tangential or loosely related
+
+PER COMPANY: name, industry, hq_location, estimated_size, website, relevance_score (1-10), relevance_reasoning (1 sentence why this score), discovery_category ("Industry Leader"|"Rapid Growth"|"Market Expansion"|"Emerging Player"|"Directive Match"|"Strategic Partnership")`
+
+    let trainingCompanies: Company[] = []
+    try {
+      const trainingResult = await callAIAgent(trainingMessage, COMPANY_EXTRACTOR_ID)
+      console.log('[runDirectPipeline] Training data result success:', trainingResult?.success)
+
+      if (trainingResult?.success) {
+        const trainingParsed = parseAgentResult(trainingResult)
+        if (trainingParsed) {
+          let rawTraining: any[] = []
+          if (Array.isArray(trainingParsed?.extracted_companies)) {
+            rawTraining = trainingParsed.extracted_companies
+          } else if (Array.isArray(trainingParsed?.companies)) {
+            rawTraining = trainingParsed.companies
+          }
+
+          trainingCompanies = rawTraining.map((c: any) => ({
+            name: c?.name ?? c?.company_name ?? '',
+            industry: c?.industry ?? '',
+            hq_location: c?.hq_location ?? '',
+            estimated_size: c?.estimated_size ?? '',
+            relevance_score: typeof c?.relevance_score === 'number' ? c.relevance_score : 0,
+            relevance_reasoning: c?.relevance_reasoning ?? '',
+            website: c?.website ?? '',
+            source_segment: 'Training Data',
+            source_urls: [],
+            discovery_category: c?.discovery_category ?? 'Directive Match',
+            selected: true,
+          })).filter((c: Company) => c.name.trim().length > 0)
+
+          console.log(`[runDirectPipeline] Training data pass: ${trainingCompanies.length} companies generated`)
+        }
+      }
+    } catch (trainingErr) {
+      console.warn('[runDirectPipeline] Training data pass failed (non-critical):', trainingErr)
+      // Training data pass is non-critical — continue with web results only
+    }
+
+    // Merge web + training data, deduplicate, sort, cap
+    const allCompanies = [...enrichedWithUrls, ...trainingCompanies]
+    const { deduplicated } = deduplicateCompanies(allCompanies)
     // Sort by relevance score descending, then cap to target count
     deduplicated.sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0))
     const capped = deduplicated.slice(0, targetCount)
-    console.log(`[runDirectPipeline] Complete: ${capped.length} companies (${rawCompanies.length} raw, ${deduplicated.length} deduped, capped to ${targetCount})`)
 
-    // CLIENT-SIDE cross-reference: map researcher findings URLs to companies by name matching
-    // This is the reliable path — we don't trust the LLM to have populated source_urls correctly
-    const researcherFindings = Array.isArray(researchParsed?.findings) ? researchParsed.findings : []
-    const enrichedWithUrls = crossReferenceSourceUrls(capped, researcherFindings)
-    console.log(`[runDirectPipeline] Cross-referenced source URLs. Companies with URLs: ${enrichedWithUrls.filter(c => c.source_urls && c.source_urls.length > 0).length}/${enrichedWithUrls.length}`)
+    const webCount = capped.filter(c => c.source_segment === 'Web Search').length
+    const trainingCount = capped.filter(c => c.source_segment === 'Training Data').length
+    console.log(`[runDirectPipeline] Complete: ${capped.length} companies (${webCount} web, ${trainingCount} training data, ${deduplicated.length} deduped, capped to ${targetCount})`)
 
     // Extract source provenance from both extractor and researcher results
     const directSources = extractDiscoverySources(extractParsed, researchParsed)
-    return { companies: enrichedWithUrls, sources: directSources, diagnostics }
+    return { companies: capped, sources: directSources, diagnostics }
   }, [updateCampaign])
 
   // ─ Agent Calls ─
@@ -3222,11 +3314,19 @@ ${truncatedFindings}`
       const directResult = await runDirectPipeline(campaign)
       if (directResult.companies.length > 0) {
         const withUrlsCount = directResult.companies.filter(c => c.source_urls && c.source_urls.length > 0).length
-        console.log(`[runDiscovery] Direct pipeline succeeded: ${directResult.companies.length} companies, ${withUrlsCount} with source URLs, ${directResult.sources.length} provenance sources`)
-        const segStrategy: SegmentStrategy[] = [{ segment_name: 'Web Research Pipeline', target_count: targetCount, actual_count: directResult.companies.length }]
+        const webCount = directResult.companies.filter(c => c.source_segment === 'Web Search').length
+        const trainingCount = directResult.companies.filter(c => c.source_segment === 'Training Data').length
+        console.log(`[runDiscovery] Direct pipeline succeeded: ${directResult.companies.length} companies (${webCount} web, ${trainingCount} training), ${withUrlsCount} with source URLs, ${directResult.sources.length} provenance sources`)
+        const segStrategy: SegmentStrategy[] = [
+          { segment_name: 'Web Search', target_count: targetCount, actual_count: webCount },
+          ...(trainingCount > 0 ? [{ segment_name: 'Training Data', target_count: Math.ceil(targetCount * 0.4), actual_count: trainingCount }] : []),
+        ]
+        const summaryParts = [`Discovered ${directResult.companies.length} companies`]
+        if (webCount > 0) summaryParts.push(`${webCount} from web research (${withUrlsCount} source-verified)`)
+        if (trainingCount > 0) summaryParts.push(`${trainingCount} from AI training knowledge`)
         updateCampaign({
           ...campaign, companies: directResult.companies, stage: 'discovery',
-          searchSummary: `Discovered ${directResult.companies.length} companies via web research pipeline with ${withUrlsCount} source-verified.`,
+          searchSummary: summaryParts.join(' — '),
           segmentationStrategy: segStrategy, duplicatesRemoved: 0, updatedAt: new Date().toISOString(),
           discoverySources: directResult.sources,
           searchDiagnostics: directResult.diagnostics,
