@@ -4425,16 +4425,29 @@ CRITICAL RULES:
     setError(null)
     setActiveAgentId(FINANCIAL_GROWTH_AGENT_ID)
 
-    const enrichedResults: EnrichedCompany[] = []
+    // Preserve previously enriched companies — only enrich companies not already in the list
+    const existingEnriched = Array.isArray(campaign.enrichedCompanies) ? [...campaign.enrichedCompanies] : []
+    const existingNames = new Set(existingEnriched.map(ec => ec.company_name.toLowerCase().trim()))
+    const toEnrich = selected.filter(c => !existingNames.has(c.name.toLowerCase().trim()))
+
+    // If all selected companies are already enriched, nothing to do
+    if (toEnrich.length === 0) {
+      setLoading(false)
+      setActiveAgentId(null)
+      return
+    }
+
+    // Start with existing enriched data — new results will be appended
+    const enrichedResults: EnrichedCompany[] = [...existingEnriched]
     let totalTime = 0
 
-    setEnrichmentProgress({ current: 0, total: selected.length, completed: [], inFlight: [] })
+    setEnrichmentProgress({ current: 0, total: toEnrich.length, completed: [], inFlight: [] })
 
     try {
       // Each company calls 4 sub-agents directly in parallel (flat calls, not manager-chained),
       // so we can run 5 companies concurrently for maximum throughput
       const CONCURRENCY = 5
-      const queue = [...selected]
+      const queue = [...toEnrich]
       const active: Promise<any>[] = []
       let completedCount = 0
       const inFlightNames: string[] = []
@@ -4450,8 +4463,8 @@ CRITICAL RULES:
 
           setEnrichmentProgress({
             current: completedCount,
-            total: selected.length,
-            completed: [...enrichedResults.map(c => c.company_name)],
+            total: toEnrich.length,
+            completed: enrichedResults.filter(c => !existingNames.has(c.company_name.toLowerCase().trim())).map(c => c.company_name),
             inFlight: [...inFlightNames],
           })
 
@@ -4461,7 +4474,7 @@ CRITICAL RULES:
             ...campaign,
             enrichedCompanies: [...enrichedResults],
             stage: 'enrichment',
-            enrichmentSummary: `Enriched ${enrichedResults.length} of ${selected.length} companies via ${AGENT_CONFIG.enrichment.name}.`,
+            enrichmentSummary: `Enriched ${enrichedResults.length} companies (${toEnrich.length} new, ${existingEnriched.length} previously enriched) via ${AGENT_CONFIG.enrichment.name}.`,
             enrichmentTime: totalTime,
             updatedAt: new Date().toISOString(),
           })
@@ -4482,8 +4495,8 @@ CRITICAL RULES:
         // Update progress to show in-flight companies
         setEnrichmentProgress({
           current: completedCount,
-          total: selected.length,
-          completed: [...enrichedResults.map(c => c.company_name)],
+          total: toEnrich.length,
+          completed: enrichedResults.filter(c => !existingNames.has(c.company_name.toLowerCase().trim())).map(c => c.company_name),
           inFlight: [...inFlightNames],
         })
         if (active.length > 0) {
@@ -4491,7 +4504,8 @@ CRITICAL RULES:
         }
       }
 
-      if (enrichedResults.length === 0) {
+      const newlyEnriched = enrichedResults.length - existingEnriched.length
+      if (newlyEnriched === 0) {
         setError('Enrichment agents failed to return results. Please try again.')
       }
 
@@ -4499,12 +4513,12 @@ CRITICAL RULES:
         ...campaign,
         enrichedCompanies: enrichedResults,
         stage: 'enrichment',
-        enrichmentSummary: `Enriched ${enrichedResults.length} companies with revenue, news, leadership, growth signals, competitive intelligence, risk & insurance challenges, HR challenges, and sales nuggets via 4 parallel research agents.`,
+        enrichmentSummary: `Enriched ${enrichedResults.length} total companies (${newlyEnriched} new this run${existingEnriched.length > 0 ? `, ${existingEnriched.length} previously enriched` : ''}) with revenue, news, leadership, growth signals, competitive intelligence, risk & insurance challenges, HR challenges, and sales nuggets via 4 parallel research agents.`,
         enrichmentTime: totalTime,
         updatedAt: new Date().toISOString(),
       })
 
-      console.log(`[runEnrichment] Complete: ${enrichedResults.length} enriched companies. Total time: ${(totalTime / 1000).toFixed(1)}s across ${selected.length} companies`)
+      console.log(`[runEnrichment] Complete: ${enrichedResults.length} total enriched (${newlyEnriched} new). Total time: ${(totalTime / 1000).toFixed(1)}s across ${toEnrich.length} companies`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrichment failed. Please try again.')
     }
