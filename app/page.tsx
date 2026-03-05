@@ -10,7 +10,8 @@ import {
   FiPhone, FiGlobe, FiFlag, FiClock, FiAlertCircle, FiCheckCircle,
   FiArrowRight, FiChevronRight, FiMenu, FiMoreVertical, FiMapPin,
   FiBriefcase, FiAward, FiBarChart2, FiDatabase, FiTarget, FiLayers,
-  FiUpload, FiFile, FiColumns
+  FiUpload, FiFile, FiColumns, FiCalendar, FiActivity, FiPlay,
+  FiUserCheck, FiPieChart, FiRepeat
 } from 'react-icons/fi'
 import { HiOutlineSparkles, HiOutlineBuildingOffice2 } from 'react-icons/hi2'
 
@@ -249,11 +250,116 @@ interface TierSummary {
   total_accounts: number
 }
 
+// ─── EXECUTION PLAYBOOK TYPES ─────────────────────────────────────────────
+interface PlaybookActionDetails {
+  campaign_type?: string
+  targeting?: string
+  estimated_audience_size?: string
+  daily_budget_usd?: number
+  duration_days?: number
+  total_budget_usd?: number
+  creative?: string
+  frequency_cap?: string
+  goal?: string
+}
+
+interface PlaybookAction {
+  action: string
+  channel: string
+  details?: PlaybookActionDetails
+}
+
+interface PlaybookPhase {
+  phase: number
+  name: string
+  duration: string
+  objective: string
+  owner: string
+  actions: PlaybookAction[]
+}
+
+interface ExecutionPlaybook {
+  campaign_name: string
+  total_duration_weeks: number
+  phases: PlaybookPhase[]
+}
+
+interface OwnershipEntry {
+  activity: string
+  owner: string
+  support: string
+  tools: string
+  tier: string
+}
+
+interface TierBudgetDetail {
+  daily_budget?: number
+  duration_days?: number
+  total?: number
+  [key: string]: any
+}
+
+interface BudgetSummary {
+  linkedin_ads: {
+    tier_1_account_targeting?: TierBudgetDetail
+    tier_2_cluster_promotion?: TierBudgetDetail
+    tier_3_broad_awareness?: TierBudgetDetail
+    subtotal_usd?: number
+    [key: string]: any
+  }
+  content_production: {
+    note?: string
+    agent_api_costs_usd?: number
+    [key: string]: any
+  }
+  total_campaign_budget_usd: number
+}
+
+interface TierKPI {
+  primary_metric?: string
+  target?: string
+  secondary_metrics?: string[]
+  [key: string]: any
+}
+
+interface OverallKPI {
+  pipeline_influenced?: string
+  campaign_roi?: string
+  reporting_cadence?: string
+  [key: string]: any
+}
+
+interface KPIs {
+  tier_1?: TierKPI
+  tier_2?: TierKPI
+  tier_3?: TierKPI
+  overall_campaign?: OverallKPI
+}
+
+interface TierMovementRule {
+  from?: string
+  triggers?: string[]
+  action?: string
+  [key: string]: any
+}
+
+interface TierMovementRules {
+  upgrade_to_tier_1?: TierMovementRule
+  upgrade_to_tier_2?: TierMovementRule
+  downgrade_to_tier_2?: TierMovementRule
+  remove_from_campaign?: TierMovementRule
+}
+
 interface MarketingStrategy {
   account_briefs: AccountBrief[]
   clusters: MarketingCluster[]
   tier_summary: TierSummary
   campaign_themes: string[]
+  execution_playbook?: ExecutionPlaybook
+  ownership_matrix?: OwnershipEntry[]
+  budget_summary?: BudgetSummary
+  kpis?: KPIs
+  tier_movement_rules?: TierMovementRules
 }
 
 interface OnePager {
@@ -385,7 +491,7 @@ type AppView = 'dashboard' | 'campaign'
 type SidebarFilter = 'all' | 'in_progress' | 'completed'
 
 // ─── HELPER: parse agent result robustly ─────────────────────────────────────
-const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'revenue', 'growth_indicators', 'recent_news', 'csuite_changes', 'competitive_intel', 'risk_insurance_challenges', 'hr_workforce_challenges', 'key_sales_nuggets', 'discovery_sources', 'account_briefs', 'clusters', 'tier_summary', 'content_assets']
+const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'revenue', 'growth_indicators', 'recent_news', 'csuite_changes', 'competitive_intel', 'risk_insurance_challenges', 'hr_workforce_challenges', 'key_sales_nuggets', 'discovery_sources', 'account_briefs', 'clusters', 'tier_summary', 'content_assets', 'execution_playbook', 'ownership_matrix', 'budget_summary', 'kpis', 'tier_movement_rules']
 
 function hasTargetKeys(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false
@@ -3285,6 +3391,7 @@ function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, on
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
   const [contentPreview, setContentPreview] = useState<string | null>(null)
   const [tierFilter, setTierFilter] = useState<'all' | 'tier_1_abm' | 'tier_2_cluster' | 'tier_3_nurture'>('all')
+  const [marketingTab, setMarketingTab] = useState<'overview' | 'briefs' | 'playbook' | 'content'>('overview')
 
   const briefs = Array.isArray(strategy?.account_briefs) ? strategy.account_briefs : []
   const clusters = Array.isArray(strategy?.clusters) ? strategy.clusters : []
@@ -3293,6 +3400,19 @@ function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, on
   const tier1 = briefs.filter(b => b.tier === 'tier_1_abm')
   const tier2 = briefs.filter(b => b.tier === 'tier_2_cluster')
   const tier3 = briefs.filter(b => b.tier === 'tier_3_nurture')
+
+  const playbook = strategy?.execution_playbook
+  const ownershipMatrix = Array.isArray(strategy?.ownership_matrix) ? strategy.ownership_matrix : []
+  const budgetSummary = strategy?.budget_summary
+  const kpis = strategy?.kpis
+  const tierMovement = strategy?.tier_movement_rules
+
+  const mktTabs: { key: typeof marketingTab; label: string; icon: React.ElementType; available: boolean }[] = [
+    { key: 'overview', label: 'Overview', icon: FiTarget, available: true },
+    { key: 'briefs', label: 'Account Briefs', icon: FiBarChart2, available: briefs.length > 0 },
+    { key: 'playbook', label: 'Playbook', icon: FiPlay, available: !!playbook },
+    { key: 'content', label: 'Content Assets', icon: FiFile, available: content.length > 0 },
+  ]
 
   return (
     <div>
@@ -3353,7 +3473,7 @@ function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, on
           <FiTarget className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-serif font-semibold text-foreground mb-2">Marketing Strategy</h3>
           <p className="text-sm text-muted-foreground max-w-md mx-auto mb-6">
-            Score and tier your enriched accounts, identify cross-company clusters, and generate targeted marketing content for each tier.
+            Score and tier your enriched accounts, identify cross-company clusters, build an execution playbook, and generate targeted marketing content for each tier.
           </p>
           <button onClick={onRunStrategy} disabled={loading || (campaign.enrichedCompanies?.length ?? 0) === 0} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md mx-auto">
             <FiTarget className="w-4 h-4" /> Analyze & Score Accounts
@@ -3364,191 +3484,578 @@ function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, on
         </div>
       )}
 
-      {/* Strategy results */}
+      {/* Strategy results — Tabbed */}
       {strategy && (
         <>
-          {/* Tier Overview Cards */}
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            <button onClick={() => setTierFilter(tierFilter === 'tier_1_abm' ? 'all' : 'tier_1_abm')} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_1_abm' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <FiStar className="w-4 h-4 text-amber-500" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 1 ABM</span>
-              </div>
-              <p className="text-2xl font-serif font-bold text-foreground">{tier1.length}</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">Personalized 1:1</p>
-            </button>
-            <button onClick={() => setTierFilter(tierFilter === 'tier_2_cluster' ? 'all' : 'tier_2_cluster')} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_2_cluster' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <FiLayers className="w-4 h-4 text-primary" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 2 Cluster</span>
-              </div>
-              <p className="text-2xl font-serif font-bold text-foreground">{tier2.length}</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">{clusters.length} cluster{clusters.length !== 1 ? 's' : ''} identified</p>
-            </button>
-            <button onClick={() => setTierFilter(tierFilter === 'tier_3_nurture' ? 'all' : 'tier_3_nurture')} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_3_nurture' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <FiMail className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 3 Nurture</span>
-              </div>
-              <p className="text-2xl font-serif font-bold text-foreground">{tier3.length}</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">Industry-level nurture</p>
-            </button>
+          {/* Tab Navigation */}
+          <div className="flex gap-1 mb-5 bg-card rounded-lg p-1 border border-border/30 overflow-x-auto">
+            {mktTabs.filter(t => t.available).map(t => {
+              const Icon = t.icon
+              return (
+                <button key={t.key} onClick={() => setMarketingTab(t.key)} className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${marketingTab === t.key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
+                  <Icon className="w-3.5 h-3.5" /> {t.label}
+                </button>
+              )
+            })}
           </div>
 
-          {/* Campaign Themes */}
-          {Array.isArray(strategy.campaign_themes) && strategy.campaign_themes.length > 0 && (
-            <div className="bg-muted/20 rounded-lg p-3 mb-5 border border-border/20">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Campaign Themes</p>
-              <div className="flex flex-wrap gap-1.5">
-                {strategy.campaign_themes.map((theme, i) => <InlineBadge key={i} variant="default">{theme}</InlineBadge>)}
+          {/* ═══ OVERVIEW TAB ═══ */}
+          {marketingTab === 'overview' && (
+            <>
+              {/* Tier Overview Cards */}
+              <div className="grid grid-cols-3 gap-3 mb-5">
+                <button onClick={() => { setTierFilter(tierFilter === 'tier_1_abm' ? 'all' : 'tier_1_abm'); setMarketingTab('briefs') }} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_1_abm' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <FiStar className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 1 ABM</span>
+                  </div>
+                  <p className="text-2xl font-serif font-bold text-foreground">{tier1.length}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Personalized 1:1</p>
+                </button>
+                <button onClick={() => { setTierFilter(tierFilter === 'tier_2_cluster' ? 'all' : 'tier_2_cluster'); setMarketingTab('briefs') }} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_2_cluster' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <FiLayers className="w-4 h-4 text-primary" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 2 Cluster</span>
+                  </div>
+                  <p className="text-2xl font-serif font-bold text-foreground">{tier2.length}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{clusters.length} cluster{clusters.length !== 1 ? 's' : ''} identified</p>
+                </button>
+                <button onClick={() => { setTierFilter(tierFilter === 'tier_3_nurture' ? 'all' : 'tier_3_nurture'); setMarketingTab('briefs') }} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_3_nurture' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <FiMail className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 3 Nurture</span>
+                  </div>
+                  <p className="text-2xl font-serif font-bold text-foreground">{tier3.length}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Industry-level nurture</p>
+                </button>
               </div>
-            </div>
-          )}
 
-          {/* Clusters Section */}
-          {clusters.length > 0 && (tierFilter === 'all' || tierFilter === 'tier_2_cluster') && (
-            <div className="mb-5">
-              <h3 className="text-sm font-serif font-semibold text-foreground mb-3 flex items-center gap-1.5"><FiLayers className="w-4 h-4 text-primary" /> Account Clusters</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {clusters.map((cl, i) => (
-                  <div key={i} className="bg-card rounded-lg border border-border/30 p-3">
-                    <h4 className="text-sm font-semibold text-foreground mb-1">{cl.cluster_name}</h4>
-                    <p className="text-xs text-muted-foreground mb-2">{cl.theme}</p>
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {Array.isArray(cl.company_names) && cl.company_names.map((cn, j) => <InlineBadge key={j} variant="muted">{cn}</InlineBadge>)}
+              {/* Campaign Themes */}
+              {Array.isArray(strategy.campaign_themes) && strategy.campaign_themes.length > 0 && (
+                <div className="bg-muted/20 rounded-lg p-3 mb-5 border border-border/20">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Campaign Themes</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {strategy.campaign_themes.map((theme, i) => <InlineBadge key={i} variant="default">{theme}</InlineBadge>)}
+                  </div>
+                </div>
+              )}
+
+              {/* Playbook Summary (if available) */}
+              {playbook && (
+                <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-serif font-semibold text-foreground flex items-center gap-1.5"><FiPlay className="w-4 h-4 text-primary" /> Execution Playbook</h3>
+                    <button onClick={() => setMarketingTab('playbook')} className="text-xs text-primary hover:underline flex items-center gap-1">View Full Playbook <FiArrowRight className="w-3 h-3" /></button>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">{playbook.campaign_name} &mdash; {playbook.total_duration_weeks} weeks, {Array.isArray(playbook.phases) ? playbook.phases.length : 0} phases</p>
+                  <div className="flex gap-2 overflow-x-auto">
+                    {Array.isArray(playbook.phases) && playbook.phases.map((ph, i) => (
+                      <div key={i} className="flex-1 min-w-[140px] bg-muted/20 rounded-lg p-2.5 border border-border/20">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center">{ph.phase}</span>
+                          <span className="text-xs font-semibold text-foreground truncate">{ph.name}</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{ph.duration}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{ph.owner}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {budgetSummary && (
+                    <div className="mt-3 pt-3 border-t border-border/20 flex items-center gap-4">
+                      <div className="flex items-center gap-1.5">
+                        <FiDollarSign className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Total Budget:</span>
+                        <span className="text-xs font-semibold text-foreground">${budgetSummary.total_campaign_budget_usd.toLocaleString()}</span>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-primary italic">{cl.recommended_content_angle}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Clusters Section */}
+              {clusters.length > 0 && (
+                <div className="mb-5">
+                  <h3 className="text-sm font-serif font-semibold text-foreground mb-3 flex items-center gap-1.5"><FiLayers className="w-4 h-4 text-primary" /> Account Clusters</h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {clusters.map((cl, i) => (
+                      <div key={i} className="bg-card rounded-lg border border-border/30 p-3">
+                        <h4 className="text-sm font-semibold text-foreground mb-1">{cl.cluster_name}</h4>
+                        <p className="text-xs text-muted-foreground mb-2">{cl.theme}</p>
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {Array.isArray(cl.company_names) && cl.company_names.map((cn, j) => <InlineBadge key={j} variant="muted">{cn}</InlineBadge>)}
+                        </div>
+                        <p className="text-[10px] text-primary italic">{cl.recommended_content_angle}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+              )}
+
+              {/* Action CTAs */}
+              {!loading && (
+                <div className="flex flex-wrap gap-3 mb-5">
+                  {content.length === 0 && (
+                    <div className="flex-1 min-w-[260px] bg-card rounded-lg border border-border/30 p-4 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground font-serif">Generate Marketing Content</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">Tier-specific one-pagers, emails, thought leadership & ads for {briefs.length} accounts.</p>
+                      </div>
+                      <button onClick={onGenerateContent} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shadow-md flex-shrink-0 ml-4">
+                        <FiEdit3 className="w-4 h-4" /> Generate Content
+                      </button>
+                    </div>
+                  )}
+                  <div className={`${content.length === 0 ? 'min-w-[220px]' : 'flex-1'} bg-card rounded-lg border border-border/30 p-4 flex items-center justify-between`}>
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground font-serif">Find Contacts</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">Search for decision-maker contacts via Apollo.</p>
+                    </div>
+                    <button onClick={onFindContacts} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-card text-foreground border border-border/40 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50 flex-shrink-0 ml-4">
+                      <FiUsers className="w-4 h-4" /> Find Contacts
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ═══ ACCOUNT BRIEFS TAB ═══ */}
+          {marketingTab === 'briefs' && (
+            <>
+              {/* Tier filter */}
+              <div className="flex gap-2 mb-4">
+                {(['all', 'tier_1_abm', 'tier_2_cluster', 'tier_3_nurture'] as const).map(t => {
+                  const label = t === 'all' ? `All (${briefs.length})` : t === 'tier_1_abm' ? `Tier 1 (${tier1.length})` : t === 'tier_2_cluster' ? `Tier 2 (${tier2.length})` : `Tier 3 (${tier3.length})`
+                  return (
+                    <button key={t} onClick={() => setTierFilter(t)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${tierFilter === t ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
+                      {label}
+                    </button>
+                  )
+                })}
               </div>
+
+              <div className="space-y-2">
+                {filteredBriefs.map(brief => {
+                  const isExpanded = expandedCompany === brief.company_name
+                  const compContent = content.find(c => c.company_name === brief.company_name)
+                  const showingContent = contentPreview === brief.company_name && compContent
+
+                  return (
+                    <div key={brief.company_name} className={`bg-card rounded-lg border transition-all ${brief.tier === 'tier_1_abm' ? 'border-amber-300/50' : 'border-border/30'}`}>
+                      <button className="w-full p-4 flex items-center justify-between text-left hover:bg-muted/10 transition-colors" onClick={() => { setExpandedCompany(isExpanded ? null : brief.company_name); setContentPreview(null) }}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-sm font-bold ${brief.tier === 'tier_1_abm' ? 'bg-amber-100 text-amber-700' : brief.tier === 'tier_2_cluster' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                            {brief.scores.weighted_score.toFixed(1)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-serif font-semibold text-foreground truncate">{brief.company_name}</h4>
+                              <TierBadge tier={brief.tier} />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">{brief.tier_rationale}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                          {compContent && (
+                            <button onClick={(e) => { e.stopPropagation(); setContentPreview(showingContent ? null : brief.company_name); setExpandedCompany(brief.company_name) }} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                              <FiFile className="w-3 h-3" /> Content
+                            </button>
+                          )}
+                          {isExpanded ? <FiChevronUp className="w-5 h-5 text-muted-foreground" /> : <FiChevronDown className="w-5 h-5 text-muted-foreground" />}
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="border-t border-border/20 p-4 space-y-4">
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Score Breakdown</p>
+                            <div className="space-y-1.5">
+                              <ScoreBar label="Signal" value={brief.scores.signal_density} weight="25%" />
+                              <ScoreBar label="Strat. Fit" value={brief.scores.strategic_fit} weight="35%" />
+                              <ScoreBar label="Timing" value={brief.scores.timing} weight="25%" />
+                              <ScoreBar label="Scale" value={brief.scores.scale_indicator} weight="15%" />
+                            </div>
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20">
+                              <span className="text-xs font-medium text-foreground">Weighted Score:</span>
+                              <span className={`text-sm font-bold ${brief.scores.weighted_score >= 7 ? 'text-amber-600' : brief.scores.weighted_score >= 4.5 ? 'text-primary' : 'text-muted-foreground'}`}>{brief.scores.weighted_score.toFixed(2)}</span>
+                            </div>
+                          </div>
+                          {Array.isArray(brief.key_angles) && brief.key_angles.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Key Selling Angles</p>
+                              <ul className="space-y-1">
+                                {brief.key_angles.map((angle, i) => (
+                                  <li key={i} className="text-sm text-foreground flex items-start gap-1.5"><FiChevronRight className="w-3 h-3 text-primary mt-1 flex-shrink-0" />{angle}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {Array.isArray(brief.priority_signals) && brief.priority_signals.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Priority Signals</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {brief.priority_signals.map((sig, i) => <InlineBadge key={i} variant="warning">{sig}</InlineBadge>)}
+                              </div>
+                            </div>
+                          )}
+                          {Array.isArray(brief.channel_strategy) && brief.channel_strategy.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Channel Strategy</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {brief.channel_strategy.map((ch, i) => <InlineBadge key={i} variant="success">{ch.replace(/_/g, ' ')}</InlineBadge>)}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {showingContent && compContent && <ContentPreviewPanel content={compContent} onClose={() => setContentPreview(null)} />}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* ═══ PLAYBOOK TAB ═══ */}
+          {marketingTab === 'playbook' && playbook && (
+            <>
+              {/* Campaign Header */}
+              <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+                <h3 className="text-base font-serif font-semibold text-foreground mb-1">{playbook.campaign_name}</h3>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1"><FiCalendar className="w-3.5 h-3.5" /> {playbook.total_duration_weeks} weeks</span>
+                  <span className="flex items-center gap-1"><FiActivity className="w-3.5 h-3.5" /> {Array.isArray(playbook.phases) ? playbook.phases.length : 0} phases</span>
+                  {budgetSummary && <span className="flex items-center gap-1"><FiDollarSign className="w-3.5 h-3.5" /> ${budgetSummary.total_campaign_budget_usd.toLocaleString()} total budget</span>}
+                </div>
+              </div>
+
+              {/* Campaign Timeline */}
+              <div className="mb-6">
+                <h3 className="text-sm font-serif font-semibold text-foreground mb-3 flex items-center gap-1.5"><FiCalendar className="w-4 h-4 text-primary" /> Campaign Timeline</h3>
+                <div className="relative">
+                  {/* Timeline connector */}
+                  <div className="absolute left-4 top-6 bottom-6 w-0.5 bg-border/40" />
+                  <div className="space-y-4">
+                    {Array.isArray(playbook.phases) && playbook.phases.map((phase, pi) => (
+                      <PhaseCard key={pi} phase={phase} phaseIndex={pi} totalPhases={playbook.phases.length} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary Cards Row: Budget, KPIs, Ownership */}
+              <div className="grid gap-4 sm:grid-cols-3 mb-6">
+                {/* Budget Summary Card */}
+                {budgetSummary && (
+                  <div className="bg-card rounded-lg border border-border/30 p-4">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5"><FiDollarSign className="w-3.5 h-3.5 text-primary" /> Budget Summary</h4>
+                    <div className="space-y-2">
+                      {budgetSummary.linkedin_ads?.tier_1_account_targeting && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Tier 1 LinkedIn</span>
+                          <span className="text-xs font-medium text-foreground">${(budgetSummary.linkedin_ads.tier_1_account_targeting.total ?? budgetSummary.linkedin_ads.tier_1_account_targeting.total_budget_usd ?? 0).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {budgetSummary.linkedin_ads?.tier_2_cluster_promotion && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Tier 2 LinkedIn</span>
+                          <span className="text-xs font-medium text-foreground">${(budgetSummary.linkedin_ads.tier_2_cluster_promotion.total ?? budgetSummary.linkedin_ads.tier_2_cluster_promotion.total_budget_usd ?? 0).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {budgetSummary.linkedin_ads?.tier_3_broad_awareness && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Tier 3 LinkedIn</span>
+                          <span className="text-xs font-medium text-foreground">${(budgetSummary.linkedin_ads.tier_3_broad_awareness.total ?? budgetSummary.linkedin_ads.tier_3_broad_awareness.total_budget_usd ?? 0).toLocaleString()}</span>
+                        </div>
+                      )}
+                      <div className="border-t border-border/20 pt-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground">Total</span>
+                        <span className="text-sm font-bold text-primary">${budgetSummary.total_campaign_budget_usd.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* KPIs Card */}
+                {kpis && (
+                  <div className="bg-card rounded-lg border border-border/30 p-4">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5"><FiActivity className="w-3.5 h-3.5 text-primary" /> Key Performance Indicators</h4>
+                    <div className="space-y-2.5">
+                      {kpis.tier_1 && (
+                        <div>
+                          <div className="flex items-center gap-1 mb-0.5"><FiStar className="w-3 h-3 text-amber-500" /><span className="text-[10px] font-semibold text-muted-foreground uppercase">Tier 1</span></div>
+                          <p className="text-xs text-foreground">{kpis.tier_1.primary_metric}{kpis.tier_1.target ? ` (${kpis.tier_1.target})` : ''}</p>
+                        </div>
+                      )}
+                      {kpis.tier_2 && (
+                        <div>
+                          <div className="flex items-center gap-1 mb-0.5"><FiLayers className="w-3 h-3 text-primary" /><span className="text-[10px] font-semibold text-muted-foreground uppercase">Tier 2</span></div>
+                          <p className="text-xs text-foreground">{kpis.tier_2.primary_metric}{kpis.tier_2.target ? ` (${kpis.tier_2.target})` : ''}</p>
+                        </div>
+                      )}
+                      {kpis.tier_3 && (
+                        <div>
+                          <div className="flex items-center gap-1 mb-0.5"><FiMail className="w-3 h-3 text-muted-foreground" /><span className="text-[10px] font-semibold text-muted-foreground uppercase">Tier 3</span></div>
+                          <p className="text-xs text-foreground">{kpis.tier_3.primary_metric}{kpis.tier_3.target ? ` (${kpis.tier_3.target})` : ''}</p>
+                        </div>
+                      )}
+                      {kpis.overall_campaign && (
+                        <div className="border-t border-border/20 pt-2">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase">Overall</span>
+                          {kpis.overall_campaign.reporting_cadence && <p className="text-[10px] text-muted-foreground">Reporting: {kpis.overall_campaign.reporting_cadence}</p>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tier Movement Card */}
+                {tierMovement && (
+                  <div className="bg-card rounded-lg border border-border/30 p-4">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5"><FiRepeat className="w-3.5 h-3.5 text-primary" /> Tier Movement Rules</h4>
+                    <div className="space-y-2.5">
+                      {tierMovement.upgrade_to_tier_1 && (
+                        <div>
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <FiTrendingUp className="w-3 h-3 text-green-600" />
+                            <span className="text-[10px] font-semibold text-green-700">Upgrade to Tier 1</span>
+                          </div>
+                          {Array.isArray(tierMovement.upgrade_to_tier_1.triggers) && tierMovement.upgrade_to_tier_1.triggers.map((t, i) => (
+                            <p key={i} className="text-[10px] text-muted-foreground ml-4">- {t}</p>
+                          ))}
+                        </div>
+                      )}
+                      {tierMovement.upgrade_to_tier_2 && (
+                        <div>
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <FiTrendingUp className="w-3 h-3 text-blue-600" />
+                            <span className="text-[10px] font-semibold text-blue-700">Upgrade to Tier 2</span>
+                          </div>
+                          {Array.isArray(tierMovement.upgrade_to_tier_2.triggers) && tierMovement.upgrade_to_tier_2.triggers.map((t, i) => (
+                            <p key={i} className="text-[10px] text-muted-foreground ml-4">- {t}</p>
+                          ))}
+                        </div>
+                      )}
+                      {tierMovement.downgrade_to_tier_2 && (
+                        <div>
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <FiChevronDown className="w-3 h-3 text-orange-500" />
+                            <span className="text-[10px] font-semibold text-orange-600">Downgrade to Tier 2</span>
+                          </div>
+                          {Array.isArray(tierMovement.downgrade_to_tier_2.triggers) && tierMovement.downgrade_to_tier_2.triggers.map((t, i) => (
+                            <p key={i} className="text-[10px] text-muted-foreground ml-4">- {t}</p>
+                          ))}
+                        </div>
+                      )}
+                      {tierMovement.remove_from_campaign && (
+                        <div>
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <FiX className="w-3 h-3 text-red-500" />
+                            <span className="text-[10px] font-semibold text-red-600">Remove</span>
+                          </div>
+                          {Array.isArray(tierMovement.remove_from_campaign.triggers) && tierMovement.remove_from_campaign.triggers.map((t, i) => (
+                            <p key={i} className="text-[10px] text-muted-foreground ml-4">- {t}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Ownership Matrix */}
+              {ownershipMatrix.length > 0 && (
+                <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5"><FiUserCheck className="w-3.5 h-3.5 text-primary" /> Ownership Matrix</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border/30">
+                          <th className="text-left py-2 pr-3 font-semibold text-muted-foreground uppercase tracking-wider">Activity</th>
+                          <th className="text-left py-2 pr-3 font-semibold text-muted-foreground uppercase tracking-wider">Owner</th>
+                          <th className="text-left py-2 pr-3 font-semibold text-muted-foreground uppercase tracking-wider">Support</th>
+                          <th className="text-left py-2 pr-3 font-semibold text-muted-foreground uppercase tracking-wider">Tools</th>
+                          <th className="text-left py-2 font-semibold text-muted-foreground uppercase tracking-wider">Tier</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ownershipMatrix.map((entry, i) => (
+                          <tr key={i} className="border-b border-border/10">
+                            <td className="py-2 pr-3 text-foreground font-medium">{entry.activity}</td>
+                            <td className="py-2 pr-3">
+                              <InlineBadge variant={entry.owner === 'Marketing' ? 'accent' : entry.owner === 'Sales' ? 'default' : 'muted'}>{entry.owner}</InlineBadge>
+                            </td>
+                            <td className="py-2 pr-3 text-muted-foreground">{entry.support}</td>
+                            <td className="py-2 pr-3 text-muted-foreground">{entry.tools}</td>
+                            <td className="py-2 text-muted-foreground">{entry.tier}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Playbook not available yet */}
+          {marketingTab === 'playbook' && !playbook && (
+            <div className="text-center py-12 bg-card rounded-lg border border-border/30">
+              <FiPlay className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+              <h3 className="text-sm font-serif font-semibold text-foreground mb-1">Execution Playbook</h3>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">The execution playbook was not generated with this strategy. Re-run the strategy analysis to generate a full campaign playbook.</p>
+              <button onClick={onRunStrategy} disabled={loading} className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shadow-md mx-auto">
+                <FiRefreshCw className="w-4 h-4" /> Re-analyze with Playbook
+              </button>
             </div>
           )}
 
-          {/* Action CTAs */}
-          {!loading && (
-            <div className="flex flex-wrap gap-3 mb-5">
-              {content.length === 0 && (
-                <div className="flex-1 min-w-[260px] bg-card rounded-lg border border-border/30 p-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground font-serif">Generate Marketing Content</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">Tier-specific one-pagers, emails, thought leadership & ads for {briefs.length} accounts.</p>
-                  </div>
-                  <button onClick={onGenerateContent} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shadow-md flex-shrink-0 ml-4">
+          {/* ═══ CONTENT ASSETS TAB ═══ */}
+          {marketingTab === 'content' && (
+            <>
+              {content.length === 0 && !loading && (
+                <div className="text-center py-12 bg-card rounded-lg border border-border/30">
+                  <FiFile className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                  <h3 className="text-sm font-serif font-semibold text-foreground mb-1">No Content Generated</h3>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto mb-4">Generate tier-specific marketing content for your accounts.</p>
+                  <button onClick={onGenerateContent} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shadow-md mx-auto">
                     <FiEdit3 className="w-4 h-4" /> Generate Content
                   </button>
                 </div>
               )}
-              <div className={`${content.length === 0 ? 'min-w-[220px]' : 'flex-1'} bg-card rounded-lg border border-border/30 p-4 flex items-center justify-between`}>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground font-serif">Find Contacts</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">Search for decision-maker contacts via Apollo.</p>
+              {content.length > 0 && (
+                <div className="space-y-3">
+                  {content.map((cc, i) => (
+                    <div key={i} className="bg-card rounded-lg border border-border/30">
+                      <button className="w-full p-4 flex items-center justify-between text-left hover:bg-muted/10 transition-colors" onClick={() => setContentPreview(contentPreview === cc.company_name ? null : cc.company_name)}>
+                        <div className="flex items-center gap-2">
+                          <FiFile className="w-4 h-4 text-primary" />
+                          <h4 className="text-sm font-serif font-semibold text-foreground">{cc.company_name}</h4>
+                          <TierBadge tier={cc.tier} />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground">
+                            {[cc.content_assets.one_pager ? 'One-Pager' : null, Array.isArray(cc.content_assets.email_sequence) && cc.content_assets.email_sequence.length > 0 ? 'Emails' : null, cc.content_assets.thought_leadership ? 'Thought Leadership' : null, Array.isArray(cc.content_assets.ad_copy) && cc.content_assets.ad_copy.length > 0 ? 'Ads' : null].filter(Boolean).join(' / ')}
+                          </span>
+                          {contentPreview === cc.company_name ? <FiChevronUp className="w-4 h-4 text-muted-foreground" /> : <FiChevronDown className="w-4 h-4 text-muted-foreground" />}
+                        </div>
+                      </button>
+                      {contentPreview === cc.company_name && <ContentPreviewPanel content={cc} onClose={() => setContentPreview(null)} />}
+                    </div>
+                  ))}
                 </div>
-                <button onClick={onFindContacts} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-card text-foreground border border-border/40 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50 flex-shrink-0 ml-4">
-                  <FiUsers className="w-4 h-4" /> Find Contacts
-                </button>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── PHASE CARD (for Playbook timeline) ───────────────────────────────────────
+function PhaseCard({ phase, phaseIndex, totalPhases }: { phase: PlaybookPhase; phaseIndex: number; totalPhases: number }) {
+  const [expanded, setExpanded] = useState(phaseIndex === 0)
+
+  const ownerColor = phase.owner === 'Marketing' ? 'text-blue-700 bg-blue-100' : phase.owner === 'Sales' ? 'text-green-700 bg-green-100' : 'text-purple-700 bg-purple-100'
+  const phaseColor = phaseIndex === 0 ? 'bg-blue-500' : phaseIndex === 1 ? 'bg-green-500' : 'bg-purple-500'
+
+  return (
+    <div className="relative pl-10">
+      {/* Timeline dot */}
+      <div className={`absolute left-2.5 top-4 w-3 h-3 rounded-full ${phaseColor} border-2 border-background z-10`} />
+
+      <div className="bg-card rounded-lg border border-border/30 overflow-hidden">
+        <button className="w-full p-4 flex items-center justify-between text-left hover:bg-muted/10 transition-colors" onClick={() => setExpanded(!expanded)}>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${phaseColor} text-white flex-shrink-0`}>{phase.phase}</span>
+            <div className="min-w-0">
+              <h4 className="text-sm font-serif font-semibold text-foreground">{phase.name}</h4>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] text-muted-foreground">{phase.duration}</span>
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${ownerColor}`}>{phase.owner}</span>
               </div>
             </div>
-          )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+            <span className="text-[10px] text-muted-foreground">{Array.isArray(phase.actions) ? phase.actions.length : 0} actions</span>
+            {expanded ? <FiChevronUp className="w-4 h-4 text-muted-foreground" /> : <FiChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </div>
+        </button>
 
-          {/* Account Briefs List */}
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-serif font-semibold text-foreground flex items-center gap-1.5">
-              <FiBarChart2 className="w-4 h-4 text-primary" /> Account Briefs ({filteredBriefs.length})
-            </h3>
-            {tierFilter !== 'all' && (
-              <button onClick={() => setTierFilter('all')} className="text-xs text-primary hover:underline">Show all tiers</button>
+        {expanded && (
+          <div className="border-t border-border/20 p-4">
+            <p className="text-sm text-muted-foreground mb-4">{phase.objective}</p>
+
+            <div className="space-y-3">
+              {Array.isArray(phase.actions) && phase.actions.map((action, ai) => (
+                <ActionItem key={ai} action={action} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── ACTION ITEM (for Playbook phase actions) ─────────────────────────────────
+function ActionItem({ action }: { action: PlaybookAction }) {
+  const [showDetails, setShowDetails] = useState(false)
+  const d = action.details
+
+  return (
+    <div className="bg-muted/15 rounded-lg border border-border/15 overflow-hidden">
+      <button className="w-full p-3 flex items-start justify-between text-left hover:bg-muted/10 transition-colors" onClick={() => d && setShowDetails(!showDetails)}>
+        <div className="flex items-start gap-2 min-w-0">
+          <FiChevronRight className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm text-foreground">{action.action}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <InlineBadge variant="muted">{action.channel}</InlineBadge>
+              {d?.total_budget_usd != null && d.total_budget_usd > 0 && (
+                <span className="text-[10px] text-muted-foreground">${d.total_budget_usd.toLocaleString()}</span>
+              )}
+            </div>
+          </div>
+        </div>
+        {d && (
+          <span className="text-[10px] text-primary flex-shrink-0 ml-2">{showDetails ? 'Less' : 'Details'}</span>
+        )}
+      </button>
+
+      {showDetails && d && (
+        <div className="border-t border-border/10 p-3 bg-muted/5">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {d.campaign_type && (
+              <div><span className="text-[10px] text-muted-foreground">Campaign Type</span><p className="text-xs text-foreground">{d.campaign_type}</p></div>
+            )}
+            {d.targeting && (
+              <div><span className="text-[10px] text-muted-foreground">Targeting</span><p className="text-xs text-foreground">{d.targeting}</p></div>
+            )}
+            {d.estimated_audience_size && (
+              <div><span className="text-[10px] text-muted-foreground">Audience Size</span><p className="text-xs text-foreground">{d.estimated_audience_size}</p></div>
+            )}
+            {d.daily_budget_usd != null && (
+              <div><span className="text-[10px] text-muted-foreground">Daily Budget</span><p className="text-xs text-foreground">${d.daily_budget_usd}/day</p></div>
+            )}
+            {d.duration_days != null && (
+              <div><span className="text-[10px] text-muted-foreground">Duration</span><p className="text-xs text-foreground">{d.duration_days} days</p></div>
+            )}
+            {d.total_budget_usd != null && (
+              <div><span className="text-[10px] text-muted-foreground">Total Budget</span><p className="text-xs font-semibold text-foreground">${d.total_budget_usd.toLocaleString()}</p></div>
+            )}
+            {d.creative && (
+              <div className="col-span-2"><span className="text-[10px] text-muted-foreground">Creative</span><p className="text-xs text-foreground">{d.creative}</p></div>
+            )}
+            {d.frequency_cap && (
+              <div><span className="text-[10px] text-muted-foreground">Frequency Cap</span><p className="text-xs text-foreground">{d.frequency_cap}</p></div>
+            )}
+            {d.goal && (
+              <div className="col-span-2"><span className="text-[10px] text-muted-foreground">Goal</span><p className="text-xs text-primary font-medium">{d.goal}</p></div>
             )}
           </div>
-
-          <div className="space-y-2">
-            {filteredBriefs.map(brief => {
-              const isExpanded = expandedCompany === brief.company_name
-              const compContent = content.find(c => c.company_name === brief.company_name)
-              const showingContent = contentPreview === brief.company_name && compContent
-
-              return (
-                <div key={brief.company_name} className={`bg-card rounded-lg border transition-all ${brief.tier === 'tier_1_abm' ? 'border-amber-300/50' : 'border-border/30'}`}>
-                  <button className="w-full p-4 flex items-center justify-between text-left hover:bg-muted/10 transition-colors" onClick={() => { setExpandedCompany(isExpanded ? null : brief.company_name); setContentPreview(null) }}>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-sm font-bold ${brief.tier === 'tier_1_abm' ? 'bg-amber-100 text-amber-700' : brief.tier === 'tier_2_cluster' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                        {brief.scores.weighted_score.toFixed(1)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-serif font-semibold text-foreground truncate">{brief.company_name}</h4>
-                          <TierBadge tier={brief.tier} />
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{brief.tier_rationale}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                      {compContent && (
-                        <button onClick={(e) => { e.stopPropagation(); setContentPreview(showingContent ? null : brief.company_name); setExpandedCompany(brief.company_name) }} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
-                          <FiFile className="w-3 h-3" /> Content
-                        </button>
-                      )}
-                      {isExpanded ? <FiChevronUp className="w-5 h-5 text-muted-foreground" /> : <FiChevronDown className="w-5 h-5 text-muted-foreground" />}
-                    </div>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="border-t border-border/20 p-4 space-y-4">
-                      {/* Score breakdown */}
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Score Breakdown</p>
-                        <div className="space-y-1.5">
-                          <ScoreBar label="Signal" value={brief.scores.signal_density} weight="25%" />
-                          <ScoreBar label="Strat. Fit" value={brief.scores.strategic_fit} weight="35%" />
-                          <ScoreBar label="Timing" value={brief.scores.timing} weight="25%" />
-                          <ScoreBar label="Scale" value={brief.scores.scale_indicator} weight="15%" />
-                        </div>
-                        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20">
-                          <span className="text-xs font-medium text-foreground">Weighted Score:</span>
-                          <span className={`text-sm font-bold ${brief.scores.weighted_score >= 7 ? 'text-amber-600' : brief.scores.weighted_score >= 4.5 ? 'text-primary' : 'text-muted-foreground'}`}>{brief.scores.weighted_score.toFixed(2)}</span>
-                        </div>
-                      </div>
-
-                      {/* Key Angles */}
-                      {Array.isArray(brief.key_angles) && brief.key_angles.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Key Selling Angles</p>
-                          <ul className="space-y-1">
-                            {brief.key_angles.map((angle, i) => (
-                              <li key={i} className="text-sm text-foreground flex items-start gap-1.5"><FiChevronRight className="w-3 h-3 text-primary mt-1 flex-shrink-0" />{angle}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Priority Signals */}
-                      {Array.isArray(brief.priority_signals) && brief.priority_signals.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Priority Signals</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {brief.priority_signals.map((sig, i) => <InlineBadge key={i} variant="warning">{sig}</InlineBadge>)}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Channel Strategy */}
-                      {Array.isArray(brief.channel_strategy) && brief.channel_strategy.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Channel Strategy</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {brief.channel_strategy.map((ch, i) => <InlineBadge key={i} variant="success">{ch.replace(/_/g, ' ')}</InlineBadge>)}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Content preview panel */}
-                  {showingContent && compContent && <ContentPreviewPanel content={compContent} onClose={() => setContentPreview(null)} />}
-                </div>
-              )
-            })}
-          </div>
-        </>
+        </div>
       )}
     </div>
   )
@@ -4595,7 +5102,7 @@ CRITICAL RULES:
         key_sales_nuggets: Array.isArray(ec.key_sales_nuggets) ? ec.key_sales_nuggets.map(s => s.nugget) : [],
       }))
 
-      const message = `Analyze these ${companyData.length} enriched companies for the campaign "${campaign.directive}". Score each on signal density, strategic fit, timing, and scale. Assign tiers (Tier 1 ABM max 5, Tier 2 Cluster, Tier 3 Nurture). Identify clusters among Tier 2 companies.\n\nCompany data:\n${JSON.stringify(companyData)}`
+      const message = `Analyze these ${companyData.length} enriched companies for the campaign "${campaign.directive}". Score each on signal density, strategic fit, timing, and scale. Assign tiers (Tier 1 ABM max 5, Tier 2 Cluster, Tier 3 Nurture). Identify clusters among Tier 2 companies. Also produce the full 6-week execution playbook with phased actions, ownership matrix, budget summary, KPIs, and tier movement rules.\n\nCompany data:\n${JSON.stringify(companyData)}`
 
       const result = await callAIAgent(message, MARKETING_STRATEGIST_ID)
       const parsed = parseAgentResult(result)
@@ -4636,18 +5143,60 @@ CRITICAL RULES:
           total_accounts: typeof parsed.tier_summary?.total_accounts === 'number' ? parsed.tier_summary.total_accounts : enriched.length,
         },
         campaign_themes: Array.isArray(parsed.campaign_themes) ? parsed.campaign_themes : [],
+        // V2: Execution Playbook fields
+        execution_playbook: parsed.execution_playbook && typeof parsed.execution_playbook === 'object' ? {
+          campaign_name: parsed.execution_playbook.campaign_name ?? campaign.name,
+          total_duration_weeks: typeof parsed.execution_playbook.total_duration_weeks === 'number' ? parsed.execution_playbook.total_duration_weeks : 6,
+          phases: Array.isArray(parsed.execution_playbook.phases) ? parsed.execution_playbook.phases.map((p: any) => ({
+            phase: typeof p?.phase === 'number' ? p.phase : 0,
+            name: p?.name ?? '',
+            duration: p?.duration ?? '',
+            objective: p?.objective ?? '',
+            owner: p?.owner ?? '',
+            actions: Array.isArray(p?.actions) ? p.actions.map((a: any) => ({
+              action: a?.action ?? '',
+              channel: a?.channel ?? '',
+              details: a?.details && typeof a.details === 'object' ? {
+                campaign_type: a.details.campaign_type,
+                targeting: a.details.targeting,
+                estimated_audience_size: a.details.estimated_audience_size,
+                daily_budget_usd: typeof a.details.daily_budget_usd === 'number' ? a.details.daily_budget_usd : undefined,
+                duration_days: typeof a.details.duration_days === 'number' ? a.details.duration_days : undefined,
+                total_budget_usd: typeof a.details.total_budget_usd === 'number' ? a.details.total_budget_usd : undefined,
+                creative: a.details.creative,
+                frequency_cap: a.details.frequency_cap,
+                goal: a.details.goal,
+              } : undefined,
+            })) : [],
+          })) : [],
+        } : undefined,
+        ownership_matrix: Array.isArray(parsed.ownership_matrix) ? parsed.ownership_matrix.map((o: any) => ({
+          activity: o?.activity ?? '',
+          owner: o?.owner ?? '',
+          support: o?.support ?? '',
+          tools: o?.tools ?? '',
+          tier: o?.tier ?? '',
+        })) : undefined,
+        budget_summary: parsed.budget_summary && typeof parsed.budget_summary === 'object' ? {
+          linkedin_ads: parsed.budget_summary.linkedin_ads ?? {},
+          content_production: parsed.budget_summary.content_production ?? {},
+          total_campaign_budget_usd: typeof parsed.budget_summary.total_campaign_budget_usd === 'number' ? parsed.budget_summary.total_campaign_budget_usd : 0,
+        } : undefined,
+        kpis: parsed.kpis && typeof parsed.kpis === 'object' ? parsed.kpis : undefined,
+        tier_movement_rules: parsed.tier_movement_rules && typeof parsed.tier_movement_rules === 'object' ? parsed.tier_movement_rules : undefined,
       }
 
       const t1 = strategy.account_briefs.filter(b => b.tier === 'tier_1_abm').length
       const t2 = strategy.account_briefs.filter(b => b.tier === 'tier_2_cluster').length
       const t3 = strategy.account_briefs.filter(b => b.tier === 'tier_3_nurture').length
       const clusterCount = strategy.clusters.length
+      const hasPlaybook = !!strategy.execution_playbook
 
       updateCampaign({
         ...campaign,
         marketingStrategy: strategy,
         stage: 'marketing',
-        marketingSummary: `Scored ${strategy.account_briefs.length} accounts: ${t1} Tier 1 ABM, ${t2} Tier 2 Cluster (${clusterCount} cluster${clusterCount !== 1 ? 's' : ''}), ${t3} Tier 3 Nurture.`,
+        marketingSummary: `Scored ${strategy.account_briefs.length} accounts: ${t1} Tier 1 ABM, ${t2} Tier 2 Cluster (${clusterCount} cluster${clusterCount !== 1 ? 's' : ''}), ${t3} Tier 3 Nurture.${hasPlaybook ? ` ${strategy.execution_playbook!.total_duration_weeks}-week execution playbook generated.` : ''}`,
         updatedAt: new Date().toISOString(),
       })
     } catch (err) {
