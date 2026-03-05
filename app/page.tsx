@@ -5105,9 +5105,37 @@ CRITICAL RULES:
       const message = `Analyze these ${companyData.length} enriched companies for the campaign "${campaign.directive}". Score each on signal density, strategic fit, timing, and scale. Assign tiers (Tier 1 ABM max 5, Tier 2 Cluster, Tier 3 Nurture). Identify clusters among Tier 2 companies. Also produce the full 6-week execution playbook with phased actions, ownership matrix, budget summary, KPIs, and tier movement rules.\n\nCompany data:\n${JSON.stringify(companyData)}`
 
       const result = await callAIAgent(message, MARKETING_STRATEGIST_ID)
-      const parsed = parseAgentResult(result)
+      let parsed = parseAgentResult(result)
+
+      // Fallback: if parseAgentResult couldn't find account_briefs, try deeper extraction
+      if (!parsed || !Array.isArray(parsed?.account_briefs)) {
+        // Try extracting from raw response directly
+        if (result?.raw_response) {
+          try {
+            const rawParsed = parseLLMJson(result.raw_response)
+            if (rawParsed && typeof rawParsed === 'object') {
+              // Navigate through potential nesting: response.response, response.result, etc.
+              const candidates = [rawParsed, rawParsed?.response, rawParsed?.response?.response, rawParsed?.response?.result, rawParsed?.result]
+              for (const candidate of candidates) {
+                if (candidate && Array.isArray(candidate?.account_briefs)) {
+                  parsed = candidate
+                  break
+                }
+              }
+            }
+          } catch {}
+        }
+        // Also try result.response.result directly
+        if (!parsed || !Array.isArray(parsed?.account_briefs)) {
+          const directResult = result?.response?.result
+          if (directResult && Array.isArray(directResult?.account_briefs)) {
+            parsed = directResult
+          }
+        }
+      }
 
       if (!parsed || !Array.isArray(parsed?.account_briefs)) {
+        console.error('[runMarketingStrategy] Failed to parse. Keys found:', parsed ? Object.keys(parsed) : 'null', '| result keys:', result ? Object.keys(result) : 'null', '| response keys:', result?.response ? Object.keys(result.response) : 'null', '| response.result keys:', result?.response?.result ? Object.keys(result.response.result) : 'null')
         setError('Failed to parse marketing strategy results. Please try again.')
         setLoading(false)
         setActiveAgentId(null)

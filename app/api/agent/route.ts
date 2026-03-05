@@ -43,7 +43,7 @@ function generateUUID(): string {
 }
 
 // Keys that indicate the object IS the domain data (not a wrapper)
-const DOMAIN_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings']
+const DOMAIN_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'account_briefs', 'content_assets', 'execution_playbook']
 
 function hasDomainKeys(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false
