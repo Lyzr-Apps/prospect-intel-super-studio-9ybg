@@ -43,7 +43,8 @@ function generateUUID(): string {
 }
 
 // Keys that indicate the object IS the domain data (not a wrapper)
-const DOMAIN_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'account_briefs', 'content_assets', 'execution_playbook']
+// Includes both discovery/marketing keys AND enrichment sub-agent keys
+const DOMAIN_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'account_briefs', 'content_assets', 'execution_playbook', 'revenue', 'growth_indicators', 'recent_news', 'csuite_changes', 'competitive_intel', 'risk_insurance_challenges', 'hr_workforce_challenges', 'key_sales_nuggets']
 
 function hasDomainKeys(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false
@@ -320,6 +321,7 @@ async function pollTask(task_id: string) {
 
   // Task failed
   if (task.status === 'failed') {
+    console.error('[pollTask] Task FAILED. task_id:', task_id, '| error:', task.error || 'no error field', '| response snippet:', JSON.stringify(task.response)?.slice(0, 300))
     return NextResponse.json(
       {
         success: false,

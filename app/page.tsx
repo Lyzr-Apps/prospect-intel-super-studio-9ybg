@@ -4866,17 +4866,37 @@ CRITICAL RULES:
 
     const elapsed = Date.now() - start
 
-    // Extract parsed data from each sub-agent result
-    const extractParsed = (settled: PromiseSettledResult<AIAgentResponse>): any => {
-      if (settled.status === 'rejected') return null
-      if (!settled.value?.success) return null
-      return parseAgentResult(settled.value)
+    // Extract parsed data from each sub-agent result — with full debug logging
+    const agentLabels = ['Financial', 'News', 'Competitive', 'Risk']
+    const extractParsed = (settled: PromiseSettledResult<AIAgentResponse>, label: string): any => {
+      if (settled.status === 'rejected') {
+        console.error(`[enrichSingleCompany] ${company.name} ${label}: Promise rejected:`, (settled as PromiseRejectedResult).reason)
+        return null
+      }
+      const val = settled.value
+      if (!val) {
+        console.error(`[enrichSingleCompany] ${company.name} ${label}: No value returned`)
+        return null
+      }
+      // Log what we actually received
+      console.log(`[enrichSingleCompany] ${company.name} ${label}: success=${val.success}, error=${val.error || 'none'}, responseStatus=${val.response?.status}, responseKeys=${val.response?.result ? Object.keys(val.response.result).join(',') : 'none'}, rawSnippet=${val.raw_response ? String(val.raw_response).slice(0, 200) : 'none'}`)
+      if (!val.success) {
+        // Even if success is false, try to extract data from response (Lyzr sometimes returns data with success=false)
+        const fallback = parseAgentResult({ ...val, success: true } as AIAgentResponse)
+        if (fallback && typeof fallback === 'object' && Object.keys(fallback).length > 1) {
+          console.log(`[enrichSingleCompany] ${company.name} ${label}: Recovered data from failed response, keys: ${Object.keys(fallback).join(',')}`)
+          return fallback
+        }
+        console.error(`[enrichSingleCompany] ${company.name} ${label}: Agent call failed: ${val.error || val.response?.message || 'Unknown error'}`)
+        return null
+      }
+      return parseAgentResult(val)
     }
 
-    const financialData = extractParsed(financialRes)
-    const newsData = extractParsed(newsRes)
-    const competitiveData = extractParsed(competitiveRes)
-    const riskData = extractParsed(riskRes)
+    const financialData = extractParsed(financialRes, agentLabels[0])
+    const newsData = extractParsed(newsRes, agentLabels[1])
+    const competitiveData = extractParsed(competitiveRes, agentLabels[2])
+    const riskData = extractParsed(riskRes, agentLabels[3])
 
     const successCount = [financialData, newsData, competitiveData, riskData].filter(Boolean).length
     console.log(`[enrichSingleCompany] ${company.name}: ${successCount}/4 sub-agents succeeded (${(elapsed / 1000).toFixed(1)}s)`)
@@ -4937,8 +4957,10 @@ CRITICAL RULES:
     const existingNames = new Set(existingEnriched.map(ec => ec.company_name.toLowerCase().trim()))
     const toEnrich = selected.filter(c => !existingNames.has(c.name.toLowerCase().trim()))
 
-    // If all selected companies are already enriched, nothing to do
+    // If all selected companies are already enriched, offer re-enrichment
     if (toEnrich.length === 0) {
+      console.log(`[runEnrichment] All ${selected.length} selected companies already enriched. Skipping.`)
+      setError(`All ${selected.length} selected companies are already enriched. To re-enrich, clear enrichment data first.`)
       setLoading(false)
       setActiveAgentId(null)
       return
@@ -5013,7 +5035,8 @@ CRITICAL RULES:
 
       const newlyEnriched = enrichedResults.length - existingEnriched.length
       if (newlyEnriched === 0) {
-        setError('Enrichment agents failed to return results. Please try again.')
+        console.error('[runEnrichment] ZERO companies enriched. Check browser console for per-agent error details above.')
+        setError('Enrichment agents failed to return results. Check browser console (F12) for detailed diagnostics, then try again.')
       }
 
       updateCampaign({
