@@ -503,7 +503,7 @@ function deepFindTarget(obj: any, depth = 0): any {
   if (hasTargetKeys(obj)) return obj
 
   // Check common nesting patterns from Lyzr agent responses
-  const unwrapKeys = ['result', 'response', 'data', 'output', 'content']
+  const unwrapKeys = ['result', 'response', 'data', 'output', 'content', 'text', 'message']
   for (const key of unwrapKeys) {
     if (obj[key] && typeof obj[key] === 'object') {
       const found = deepFindTarget(obj[key], depth + 1)
@@ -5105,6 +5105,17 @@ CRITICAL RULES:
       const message = `Analyze these ${companyData.length} enriched companies for the campaign "${campaign.directive}". Score each on signal density, strategic fit, timing, and scale. Assign tiers (Tier 1 ABM max 5, Tier 2 Cluster, Tier 3 Nurture). Identify clusters among Tier 2 companies. Also produce the full 6-week execution playbook with phased actions, ownership matrix, budget summary, KPIs, and tier movement rules.\n\nCompany data:\n${JSON.stringify(companyData)}`
 
       const result = await callAIAgent(message, MARKETING_STRATEGIST_ID)
+
+      // Check if the agent call itself failed (timeout, error, etc.)
+      if (!result?.success) {
+        const agentError = result?.error || result?.response?.message || 'Agent call failed'
+        console.error('[runMarketingStrategy] Agent call failed:', agentError, '| Full result:', JSON.stringify(result).slice(0, 500))
+        setError(`Marketing strategy analysis failed: ${agentError}`)
+        setLoading(false)
+        setActiveAgentId(null)
+        return
+      }
+
       let parsed = parseAgentResult(result)
 
       // Fallback: if parseAgentResult couldn't find account_briefs, try deeper extraction
@@ -5135,8 +5146,27 @@ CRITICAL RULES:
       }
 
       if (!parsed || !Array.isArray(parsed?.account_briefs)) {
-        console.error('[runMarketingStrategy] Failed to parse. Keys found:', parsed ? Object.keys(parsed) : 'null', '| result keys:', result ? Object.keys(result) : 'null', '| response keys:', result?.response ? Object.keys(result.response) : 'null', '| response.result keys:', result?.response?.result ? Object.keys(result.response.result) : 'null')
-        setError('Failed to parse marketing strategy results. Please try again.')
+        // Build detailed debug info for troubleshooting
+        const parsedKeys = parsed ? Object.keys(parsed).join(', ') : 'null'
+        const resultResponseStatus = result?.response?.status ?? 'N/A'
+        const resultResponseMsg = result?.response?.message ?? ''
+        const resultError = result?.error ?? ''
+        const responseResultKeys = result?.response?.result ? Object.keys(result.response.result).join(', ') : 'none'
+        const rawSnippet = result?.raw_response ? String(result.raw_response).slice(0, 500) : 'none'
+
+        console.error('[runMarketingStrategy] Parse failed.', {
+          parsedKeys,
+          resultSuccess: result?.success,
+          resultResponseStatus,
+          resultResponseMsg,
+          resultError,
+          responseResultKeys,
+          rawSnippet,
+        })
+
+        // Show actionable error instead of generic one
+        const detail = resultError || resultResponseMsg || `Parsed keys: [${parsedKeys}]. Expected 'account_briefs' array.`
+        setError(`Marketing strategy parsing issue: ${detail}`)
         setLoading(false)
         setActiveAgentId(null)
         return

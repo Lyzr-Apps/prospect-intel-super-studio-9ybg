@@ -336,24 +336,35 @@ async function pollTask(task_id: string) {
   let moduleOutputs: ModuleOutputs | undefined
   let agentResponseRaw: any = rawText
 
-  try {
-    const envelope = JSON.parse(rawText)
-    if (envelope && typeof envelope === 'object' && 'response' in envelope) {
-      moduleOutputs = envelope.module_outputs
-      agentResponseRaw = envelope.response
+  // task.response can be: a string (JSON from agent), an object with {response, module_outputs}, or directly the domain object
+  const taskResp = task.response
+  if (taskResp && typeof taskResp === 'object' && !Array.isArray(taskResp)) {
+    if ('response' in taskResp) {
+      moduleOutputs = taskResp.module_outputs
+      agentResponseRaw = taskResp.response
+    } else if (hasDomainKeys(taskResp)) {
+      // The response IS the domain data directly (no envelope)
+      agentResponseRaw = taskResp
     }
-  } catch {
-    // Not standard JSON envelope — parseLLMJson will handle it
+  } else if (typeof taskResp === 'string') {
+    agentResponseRaw = taskResp
   }
 
-  let parsed = parseLLMJson(agentResponseRaw)
+  // If agentResponseRaw is already an object with domain keys, use it directly
+  let parsed: any
+  if (agentResponseRaw && typeof agentResponseRaw === 'object' && hasDomainKeys(agentResponseRaw)) {
+    parsed = agentResponseRaw
+  } else {
+    // Parse string or wrapped response
+    parsed = parseLLMJson(typeof agentResponseRaw === 'string' ? agentResponseRaw : JSON.stringify(agentResponseRaw))
 
-  // If parseLLMJson returned a string, try parsing it again (double-stringified JSON from manager agents)
-  if (typeof parsed === 'string') {
-    try {
-      parsed = JSON.parse(parsed)
-    } catch {
-      try { parsed = parseLLMJson(parsed) } catch {}
+    // If parseLLMJson returned a string, try parsing it again (double-stringified JSON from manager agents)
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed)
+      } catch {
+        try { parsed = parseLLMJson(parsed) } catch {}
+      }
     }
   }
 
