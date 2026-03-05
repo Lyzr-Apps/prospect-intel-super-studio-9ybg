@@ -1,0 +1,48 @@
+{
+  "agent_name": "Content Generator Agent",
+  "agent_id": "69a9334a7b1c5e5a48839699",
+  "description": "Generates tier-specific marketing content assets including personalized one-pagers, email sequences, thought leadership articles, and ad copy based on company intelligence and tier assignment.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "company_name": "string",
+    "tier": "string",
+    "content_assets": {
+      "one_pager": {},
+      "email_sequence": {},
+      "thought_leadership": {},
+      "email_template": {},
+      "nurture_email": {},
+      "ad_copy": [
+        {
+          "variant": "number",
+          "headline": "string",
+          "body": "string",
+          "cta_text": "string"
+        }
+      ]
+    },
+    "generation_notes": "string"
+  },
+  "example_response": {
+    "company_name": "sample string",
+    "tier": "sample string",
+    "content_assets": {
+      "one_pager": {},
+      "email_sequence": {},
+      "thought_leadership": {},
+      "email_template": {},
+      "nurture_email": {},
+      "ad_copy": [
+        {
+          "variant": 0,
+          "headline": "sample string",
+          "body": "sample string",
+          "cta_text": "sample string"
+        }
+      ]
+    },
+    "generation_notes": "sample string"
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "agent_name": "Marketing Strategist Agent",
+  "agent_id": "69a93326407b294c33b53485",
+  "description": "Analyzes enriched company data to score accounts on 4 dimensions (signal density, strategic fit, timing, scale), assigns tiers (Tier 1 ABM, Tier 2 Cluster, Tier 3 Nurture), identifies cross-account clusters, and defines channel strategy per tier.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "account_briefs": [
+      {
+        "company_name": "string",
+        "scores": {
+          "signal_density": "number",
+          "strategic_fit": "number",
+          "timing": "number",
+          "scale_indicator": "number",
+          "weighted_score": "number"
+        },
+        "tier": "string",
+        "tier_rationale": "string",
+        "key_angles": [
+          "string"
+        ],
+        "channel_strategy": [
+          "string"
+        ],
+        "priority_signals": [
+          "string"
+        ]
+      }
+    ],
+    "clusters": [
+      {
+        "cluster_name": "string",
+        "theme": "string",
+        "company_names": [
+          "string"
+        ],
+        "recommended_content_angle": "string"
+      }
+    ],
+    "tier_summary": {
+      "tier_1_count": "number",
+      "tier_2_count": "number",
+      "tier_3_count": "number",
+      "total_accounts": "number"
+    },
+    "campaign_themes": [
+      "string"
+    ]
+  },
+  "example_response": {
+    "account_briefs": [
+      {
+        "company_name": "sample string",
+        "scores": {
+          "signal_density": 0,
+          "strategic_fit": 0,
+          "timing": 0,
+          "scale_indicator": 0,
+          "weighted_score": 0
+        },
+        "tier": "sample string",
+        "tier_rationale": "sample string",
+        "key_angles": [
+          "sample string"
+        ],
+        "channel_strategy": [
+          "sample string"
+        ],
+        "priority_signals": [
+          "sample string"
+        ]
+      }
+    ],
+    "clusters": [
+      {
+        "cluster_name": "sample string",
+        "theme": "sample string",
+        "company_names": [
+          "sample string"
+        ],
+        "recommended_content_angle": "sample string"
+      }
+    ],
+    "tier_summary": {
+      "tier_1_count": 0,
+      "tier_2_count": 0,
+      "tier_3_count": 0,
+      "total_accounts": 0
+    },
+    "campaign_themes": [
+      "sample string"
+    ]
+  }
+}

@@ -169,12 +169,39 @@
       "has_file_output": true,
       "has_image_output": false,
       "has_voice": false
+    },
+    {
+      "agent_id": "69a93326407b294c33b53485",
+      "agent_name": "Marketing Strategist Agent",
+      "node_id": "marketing_strategist",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false,
+      "description": "Scores companies on 4 dimensions, assigns tiers (ABM/Cluster/Nurture), identifies clusters, defines channel strategy"
+    },
+    {
+      "agent_id": "69a9334a7b1c5e5a48839699",
+      "agent_name": "Content Generator Agent",
+      "node_id": "content_generator",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "agent_type": "json",
+      "has_tools": false,
+      "has_file_output": false,
+      "has_image_output": false,
+      "has_voice": false,
+      "description": "Generates tier-specific marketing content: one-pagers, email sequences, thought leadership, ad copy"
     }
   ],
   "workflow_structure": {
-    "pattern": "dual manager-subagent + sequential",
-    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> enrichment_manager <-> [financial_growth_researcher, news_leadership_researcher, competitive_market_researcher, risk_workforce_analyst] -> contact_finder -> output_node",
+    "pattern": "dual manager-subagent + sequential + marketing pipeline",
+    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> enrichment_manager <-> [financial_growth_researcher, news_leadership_researcher, competitive_market_researcher, risk_workforce_analyst] -> contact_finder -> marketing_strategist -> content_generator -> output_node",
     "discovery_pipeline": "Manager segments directive -> Researcher searches LIVE web via Gemini grounding + SERPAPI -> Extractor verifies and structures company names via Gemini grounding -> Manager deduplicates and consolidates",
-    "enrichment_pipeline": "4 specialized Gemini 2.5 Pro sub-agents called directly in parallel (bypassing manager for speed) -> Financial & Growth + News & Leadership + Competitive & Market + Risk & Workforce -> All use Google Search grounding for real-time data -> Client-side merge into single enriched company profile"
+    "enrichment_pipeline": "4 specialized Gemini 2.5 Pro sub-agents called directly in parallel (bypassing manager for speed) -> Financial & Growth + News & Leadership + Competitive & Market + Risk & Workforce -> All use Google Search grounding for real-time data -> Client-side merge into single enriched company profile",
+    "marketing_pipeline": "Marketing Strategist scores all enriched companies on 4 dimensions (signal density, strategic fit, timing, scale) -> Assigns tiers (Tier 1 ABM max 5, Tier 2 Cluster, Tier 3 Nurture) -> Identifies cross-account clusters -> Content Generator produces tier-appropriate assets (one-pagers, emails, ads) per company concurrently"
   }
 }

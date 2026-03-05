@@ -27,6 +27,10 @@ const NEWS_LEADERSHIP_AGENT_ID = '69a11c229195d30dcfc08fbb'
 const COMPETITIVE_INTEL_AGENT_ID = '69a11c329195d30dcfc08fbd'
 const RISK_WORKFORCE_AGENT_ID = '69a11c4fd3d2bd59cbfef2dc'
 
+// Marketing pipeline agents
+const MARKETING_STRATEGIST_ID = '69a93326407b294c33b53485'
+const CONTENT_GENERATOR_ID = '69a9334a7b1c5e5a48839699'
+
 // ─── AGENT CONFIG (agent-agnostic labels) ────────────────────────────────────
 const AGENT_CONFIG = {
   discoveryManager: { id: DISCOVERY_MANAGER_ID, name: 'Discovery Manager', desc: 'Orchestrates multi-agent discovery pipeline' },
@@ -34,6 +38,8 @@ const AGENT_CONFIG = {
   companyExtractor: { id: COMPANY_EXTRACTOR_ID, name: 'Company Extractor', desc: 'Extracts and structures company data from findings' },
   enrichment: { id: ENRICHMENT_MANAGER_ID, name: 'Deep Enrichment', desc: 'Multi-agent research with sales leader validation' },
   contactFinder: { id: CONTACT_AGENT_ID, name: 'Contact Finder', desc: 'Verified contacts via Apollo integration' },
+  marketingStrategist: { id: MARKETING_STRATEGIST_ID, name: 'Marketing Strategist', desc: 'Account scoring, tiering & cluster analysis' },
+  contentGenerator: { id: CONTENT_GENERATOR_ID, name: 'Content Generator', desc: 'Tier-specific marketing content creation' },
 }
 
 // ─── THEME ───────────────────────────────────────────────────────────────────
@@ -210,6 +216,105 @@ interface CampaignFilters {
   targetCount?: number
 }
 
+// ─── MARKETING STRATEGY TYPES ──────────────────────────────────────────────
+interface AccountScores {
+  signal_density: number
+  strategic_fit: number
+  timing: number
+  scale_indicator: number
+  weighted_score: number
+}
+
+interface AccountBrief {
+  company_name: string
+  scores: AccountScores
+  tier: 'tier_1_abm' | 'tier_2_cluster' | 'tier_3_nurture'
+  tier_rationale: string
+  key_angles: string[]
+  channel_strategy: string[]
+  priority_signals: string[]
+}
+
+interface MarketingCluster {
+  cluster_name: string
+  theme: string
+  company_names: string[]
+  recommended_content_angle: string
+}
+
+interface TierSummary {
+  tier_1_count: number
+  tier_2_count: number
+  tier_3_count: number
+  total_accounts: number
+}
+
+interface MarketingStrategy {
+  account_briefs: AccountBrief[]
+  clusters: MarketingCluster[]
+  tier_summary: TierSummary
+  campaign_themes: string[]
+}
+
+interface OnePager {
+  headline: string
+  company_context: string
+  key_challenges: string[]
+  proposed_approach: string
+  call_to_action: string
+  full_text: string
+}
+
+interface EmailTouch {
+  touch_number: number
+  subject: string
+  body: string
+  cta: string
+}
+
+interface ThoughtLeadership {
+  title: string
+  introduction: string
+  key_insights: string[]
+  conclusion_with_cta: string
+  full_text: string
+}
+
+interface EmailTemplate {
+  subject: string
+  body: string
+  personalization_fields: string[]
+}
+
+interface NurtureEmail {
+  subject: string
+  body: string
+  value_proposition: string
+}
+
+interface AdCopy {
+  variant: number
+  headline: string
+  body: string
+  cta_text: string
+}
+
+interface ContentAssets {
+  one_pager: OnePager | null
+  email_sequence: EmailTouch[] | null
+  thought_leadership: ThoughtLeadership | null
+  email_template: EmailTemplate | null
+  nurture_email: NurtureEmail | null
+  ad_copy: AdCopy[]
+}
+
+interface CompanyContent {
+  company_name: string
+  tier: string
+  content_assets: ContentAssets
+  generation_notes: string
+}
+
 // ─── SEARCH VERIFICATION DIAGNOSTICS ──────────────────────────────────────
 // These diagnostics capture hard evidence about whether the Researcher agent
 // actually performed live web searches vs. generating from training data.
@@ -257,7 +362,7 @@ interface Campaign {
   enrichedCompanies: EnrichedCompany[]
   contacts: CompanyContacts[]
   artifactFiles: ArtifactFile[]
-  stage: 'discovery' | 'enrichment' | 'contacts' | 'completed'
+  stage: 'discovery' | 'enrichment' | 'contacts' | 'marketing' | 'completed'
   createdAt: string
   updatedAt: string
   priority_flags: string[]
@@ -270,13 +375,17 @@ interface Campaign {
   enrichmentTime?: number
   discoverySources?: DiscoverySource[]
   searchDiagnostics?: SearchDiagnostics
+  // Marketing strategy data
+  marketingStrategy?: MarketingStrategy
+  marketingContent?: CompanyContent[]
+  marketingSummary?: string
 }
 
 type AppView = 'dashboard' | 'campaign'
 type SidebarFilter = 'all' | 'in_progress' | 'completed'
 
 // ─── HELPER: parse agent result robustly ─────────────────────────────────────
-const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'revenue', 'growth_indicators', 'recent_news', 'csuite_changes', 'competitive_intel', 'risk_insurance_challenges', 'hr_workforce_challenges', 'key_sales_nuggets', 'discovery_sources']
+const TARGET_KEYS = ['companies', 'enriched_companies', 'company_contacts', 'segmentation_strategy', 'extracted_companies', 'findings', 'revenue', 'growth_indicators', 'recent_news', 'csuite_changes', 'competitive_intel', 'risk_insurance_challenges', 'hr_workforce_challenges', 'key_sales_nuggets', 'discovery_sources', 'account_briefs', 'clusters', 'tier_summary', 'content_assets']
 
 function hasTargetKeys(obj: any): boolean {
   if (!obj || typeof obj !== 'object') return false
@@ -1303,8 +1412,9 @@ function ProgressStepper({ stage }: { stage: Campaign['stage'] }) {
     { key: 'discovery', label: 'Discovery', icon: FiSearch },
     { key: 'enrichment', label: 'Enrichment', icon: FiDatabase },
     { key: 'contacts', label: 'Contacts', icon: FiUsers },
+    { key: 'marketing', label: 'Marketing', icon: FiTarget },
   ]
-  const stageOrder = ['discovery', 'enrichment', 'contacts', 'completed']
+  const stageOrder = ['discovery', 'enrichment', 'contacts', 'marketing', 'completed']
   const currentIdx = stageOrder.indexOf(stage)
 
   return (
@@ -2832,11 +2942,12 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
 }
 
 // ─── CONTACTS VIEW ───────────────────────────────────────────────────────────
-function ContactsView({ campaign, loading, error, onRetry }: {
+function ContactsView({ campaign, loading, error, onRetry, onMarketingStrategy }: {
   campaign: Campaign
   loading: boolean
   error: string | null
   onRetry: () => void
+  onMarketingStrategy?: () => void
 }) {
   const companyContacts = Array.isArray(campaign.contacts) ? campaign.contacts : []
   const artifactFiles = Array.isArray(campaign.artifactFiles) ? campaign.artifactFiles : []
@@ -2991,6 +3102,443 @@ function ContactsView({ campaign, loading, error, onRetry }: {
           })}
         </div>
       )}
+
+      {/* Marketing Strategy CTA */}
+      {!loading && companyContacts.length > 0 && onMarketingStrategy && (
+        <div className="mt-5 flex justify-end">
+          <button onClick={onMarketingStrategy} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
+            <FiTarget className="w-4 h-4" /> Marketing Strategy
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── MARKETING STRATEGY VIEW ─────────────────────────────────────────────────
+
+function TierBadge({ tier }: { tier: string }) {
+  if (tier === 'tier_1_abm') return <InlineBadge variant="accent">Tier 1 ABM</InlineBadge>
+  if (tier === 'tier_2_cluster') return <InlineBadge variant="default">Tier 2 Cluster</InlineBadge>
+  return <InlineBadge variant="muted">Tier 3 Nurture</InlineBadge>
+}
+
+function ScoreBar({ label, value, weight }: { label: string; value: number; weight: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-muted-foreground w-20 flex-shrink-0">{label} <span className="opacity-60">({weight})</span></span>
+      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(value / 10) * 100}%` }} />
+      </div>
+      <span className="text-[10px] font-medium text-foreground w-6 text-right">{value.toFixed(1)}</span>
+    </div>
+  )
+}
+
+function ContentPreviewPanel({ content, onClose }: { content: CompanyContent; onClose: () => void }) {
+  const assets = content.content_assets
+  const [contentTab, setContentTab] = useState<'onepager' | 'emails' | 'thought' | 'ads'>('onepager')
+
+  const tabs: { key: typeof contentTab; label: string; available: boolean }[] = [
+    { key: 'onepager', label: 'One-Pager', available: !!assets.one_pager },
+    { key: 'emails', label: 'Emails', available: !!(Array.isArray(assets.email_sequence) && assets.email_sequence.length > 0) || !!assets.email_template || !!assets.nurture_email },
+    { key: 'thought', label: 'Thought Leadership', available: !!assets.thought_leadership },
+    { key: 'ads', label: 'Ad Copy', available: Array.isArray(assets.ad_copy) && assets.ad_copy.length > 0 },
+  ]
+
+  const availableTabs = tabs.filter(t => t.available)
+  const activeTab = availableTabs.find(t => t.key === contentTab) ? contentTab : availableTabs[0]?.key ?? 'onepager'
+
+  return (
+    <div className="border-t border-border/20 bg-muted/10">
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <FiFile className="w-4 h-4 text-primary" />
+            <h4 className="text-sm font-semibold text-foreground font-serif">Content Assets: {content.company_name}</h4>
+            <TierBadge tier={content.tier} />
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><FiX className="w-4 h-4" /></button>
+        </div>
+
+        {availableTabs.length > 1 && (
+          <div className="flex gap-1 mb-3 bg-muted/30 rounded-lg p-0.5">
+            {availableTabs.map(t => (
+              <button key={t.key} onClick={() => setContentTab(t.key)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === t.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{t.label}</button>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'onepager' && assets.one_pager && (
+          <div className="space-y-3">
+            <h5 className="text-base font-serif font-semibold text-foreground">{assets.one_pager.headline}</h5>
+            <p className="text-sm text-muted-foreground leading-relaxed">{assets.one_pager.company_context}</p>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Key Challenges</p>
+              <ul className="space-y-1">
+                {Array.isArray(assets.one_pager.key_challenges) && assets.one_pager.key_challenges.map((c, i) => (
+                  <li key={i} className="text-sm text-foreground flex items-start gap-1.5"><FiChevronRight className="w-3 h-3 text-primary mt-1 flex-shrink-0" />{c}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Proposed Approach</p>
+              <p className="text-sm text-foreground leading-relaxed">{assets.one_pager.proposed_approach}</p>
+            </div>
+            <div className="bg-primary/5 rounded-lg p-3 border border-primary/20">
+              <p className="text-sm font-medium text-primary">{assets.one_pager.call_to_action}</p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'emails' && (
+          <div className="space-y-3">
+            {Array.isArray(assets.email_sequence) && assets.email_sequence.map((email, i) => (
+              <div key={i} className="bg-card rounded-lg border border-border/30 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <InlineBadge variant="accent">Touch {email.touch_number}</InlineBadge>
+                  <p className="text-sm font-medium text-foreground">{email.subject}</p>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{email.body}</p>
+                <p className="text-xs text-primary mt-2 font-medium">CTA: {email.cta}</p>
+              </div>
+            ))}
+            {assets.email_template && (
+              <div className="bg-card rounded-lg border border-border/30 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <InlineBadge variant="default">Template</InlineBadge>
+                  <p className="text-sm font-medium text-foreground">{assets.email_template.subject}</p>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{assets.email_template.body}</p>
+                {Array.isArray(assets.email_template.personalization_fields) && assets.email_template.personalization_fields.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    <span className="text-[10px] text-muted-foreground mr-1">Merge fields:</span>
+                    {assets.email_template.personalization_fields.map((f, i) => <InlineBadge key={i} variant="muted">{f}</InlineBadge>)}
+                  </div>
+                )}
+              </div>
+            )}
+            {assets.nurture_email && (
+              <div className="bg-card rounded-lg border border-border/30 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <InlineBadge variant="muted">Nurture</InlineBadge>
+                  <p className="text-sm font-medium text-foreground">{assets.nurture_email.subject}</p>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{assets.nurture_email.body}</p>
+                <p className="text-xs text-primary mt-2">{assets.nurture_email.value_proposition}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'thought' && assets.thought_leadership && (
+          <div className="space-y-3">
+            <h5 className="text-base font-serif font-semibold text-foreground">{assets.thought_leadership.title}</h5>
+            <p className="text-sm text-muted-foreground leading-relaxed">{assets.thought_leadership.introduction}</p>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Key Insights</p>
+              <ul className="space-y-1.5">
+                {Array.isArray(assets.thought_leadership.key_insights) && assets.thought_leadership.key_insights.map((ins, i) => (
+                  <li key={i} className="text-sm text-foreground flex items-start gap-1.5"><FiChevronRight className="w-3 h-3 text-primary mt-1 flex-shrink-0" />{ins}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-primary/5 rounded-lg p-3 border border-primary/20">
+              <p className="text-sm text-foreground leading-relaxed">{assets.thought_leadership.conclusion_with_cta}</p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'ads' && Array.isArray(assets.ad_copy) && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {assets.ad_copy.map((ad, i) => (
+              <div key={i} className="bg-card rounded-lg border border-border/30 p-3">
+                <InlineBadge variant="muted">Variant {ad.variant}</InlineBadge>
+                <h5 className="text-sm font-semibold text-foreground mt-2">{ad.headline}</h5>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{ad.body}</p>
+                <div className="mt-2">
+                  <span className="inline-block px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs font-medium">{ad.cta_text}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {content.generation_notes && (
+          <p className="text-[10px] text-muted-foreground mt-3 italic">{content.generation_notes}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, onRunStrategy, onGenerateContent, contentProgress }: {
+  campaign: Campaign
+  onUpdateCampaign: (c: Campaign) => void
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+  onRunStrategy: () => void
+  onGenerateContent: () => void
+  contentProgress?: { current: number; total: number; completed: string[] } | null
+}) {
+  const strategy = campaign.marketingStrategy
+  const content = Array.isArray(campaign.marketingContent) ? campaign.marketingContent : []
+  const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
+  const [contentPreview, setContentPreview] = useState<string | null>(null)
+  const [tierFilter, setTierFilter] = useState<'all' | 'tier_1_abm' | 'tier_2_cluster' | 'tier_3_nurture'>('all')
+
+  const briefs = Array.isArray(strategy?.account_briefs) ? strategy.account_briefs : []
+  const clusters = Array.isArray(strategy?.clusters) ? strategy.clusters : []
+  const filteredBriefs = tierFilter === 'all' ? briefs : briefs.filter(b => b.tier === tierFilter)
+
+  const tier1 = briefs.filter(b => b.tier === 'tier_1_abm')
+  const tier2 = briefs.filter(b => b.tier === 'tier_2_cluster')
+  const tier3 = briefs.filter(b => b.tier === 'tier_3_nurture')
+
+  return (
+    <div>
+      <ProgressStepper stage="marketing" />
+
+      {/* Summary */}
+      {campaign.marketingSummary && (
+        <div className="bg-card rounded-lg border border-border/30 p-4 mb-5">
+          <div className="flex items-start gap-2">
+            <FiTarget className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-foreground leading-relaxed">{renderMarkdown(campaign.marketingSummary)}</div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-red-700 text-sm"><FiAlertCircle className="w-4 h-4 flex-shrink-0" /> <span>{error}</span></div>
+          <button onClick={onRetry} className="flex items-center gap-1 text-red-700 text-sm font-medium hover:underline flex-shrink-0 ml-2"><FiRefreshCw className="w-3.5 h-3.5" /> Retry</button>
+        </div>
+      )}
+
+      {loading && !contentProgress && (
+        <div className="mb-5">
+          <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3">
+            <FiRefreshCw className="w-4 h-4 animate-spin" />
+            {strategy ? 'Generating tier-specific marketing content...' : 'Analyzing accounts and building marketing strategy...'}
+          </div>
+          <div className="space-y-3">
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        </div>
+      )}
+
+      {loading && contentProgress && (
+        <div className="mb-5">
+          <div className="flex items-center gap-2 text-sm text-primary font-medium mb-3">
+            <FiRefreshCw className="w-4 h-4 animate-spin" />
+            Generating content: {contentProgress.current} of {contentProgress.total} companies
+          </div>
+          <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden mb-3">
+            <div className="h-full rounded-full bg-primary transition-all duration-700 ease-out" style={{ width: `${Math.max((contentProgress.current / Math.max(contentProgress.total, 1)) * 100, 2)}%` }} />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {contentProgress.completed.map((name, i) => (
+              <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <FiCheckCircle className="w-3 h-3" /> {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* No strategy yet — prompt to run */}
+      {!loading && !strategy && !error && (
+        <div className="text-center py-16 bg-card rounded-lg border border-border/30">
+          <FiTarget className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-serif font-semibold text-foreground mb-2">Marketing Strategy</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto mb-6">
+            Score and tier your enriched accounts, identify cross-company clusters, and generate targeted marketing content for each tier.
+          </p>
+          <button onClick={onRunStrategy} disabled={loading || (campaign.enrichedCompanies?.length ?? 0) === 0} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md mx-auto">
+            <FiTarget className="w-4 h-4" /> Analyze & Score Accounts
+          </button>
+          {(campaign.enrichedCompanies?.length ?? 0) === 0 && (
+            <p className="text-xs text-muted-foreground mt-3">Complete the enrichment stage first to enable marketing analysis.</p>
+          )}
+        </div>
+      )}
+
+      {/* Strategy results */}
+      {strategy && (
+        <>
+          {/* Tier Overview Cards */}
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            <button onClick={() => setTierFilter(tierFilter === 'tier_1_abm' ? 'all' : 'tier_1_abm')} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_1_abm' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <FiStar className="w-4 h-4 text-amber-500" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 1 ABM</span>
+              </div>
+              <p className="text-2xl font-serif font-bold text-foreground">{tier1.length}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Personalized 1:1</p>
+            </button>
+            <button onClick={() => setTierFilter(tierFilter === 'tier_2_cluster' ? 'all' : 'tier_2_cluster')} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_2_cluster' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <FiLayers className="w-4 h-4 text-primary" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 2 Cluster</span>
+              </div>
+              <p className="text-2xl font-serif font-bold text-foreground">{tier2.length}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{clusters.length} cluster{clusters.length !== 1 ? 's' : ''} identified</p>
+            </button>
+            <button onClick={() => setTierFilter(tierFilter === 'tier_3_nurture' ? 'all' : 'tier_3_nurture')} className={`bg-card rounded-lg border p-4 text-left transition-all ${tierFilter === 'tier_3_nurture' ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border/30 hover:border-primary/40'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <FiMail className="w-4 h-4 text-muted-foreground" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier 3 Nurture</span>
+              </div>
+              <p className="text-2xl font-serif font-bold text-foreground">{tier3.length}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Industry-level nurture</p>
+            </button>
+          </div>
+
+          {/* Campaign Themes */}
+          {Array.isArray(strategy.campaign_themes) && strategy.campaign_themes.length > 0 && (
+            <div className="bg-muted/20 rounded-lg p-3 mb-5 border border-border/20">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Campaign Themes</p>
+              <div className="flex flex-wrap gap-1.5">
+                {strategy.campaign_themes.map((theme, i) => <InlineBadge key={i} variant="default">{theme}</InlineBadge>)}
+              </div>
+            </div>
+          )}
+
+          {/* Clusters Section */}
+          {clusters.length > 0 && (tierFilter === 'all' || tierFilter === 'tier_2_cluster') && (
+            <div className="mb-5">
+              <h3 className="text-sm font-serif font-semibold text-foreground mb-3 flex items-center gap-1.5"><FiLayers className="w-4 h-4 text-primary" /> Account Clusters</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {clusters.map((cl, i) => (
+                  <div key={i} className="bg-card rounded-lg border border-border/30 p-3">
+                    <h4 className="text-sm font-semibold text-foreground mb-1">{cl.cluster_name}</h4>
+                    <p className="text-xs text-muted-foreground mb-2">{cl.theme}</p>
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {Array.isArray(cl.company_names) && cl.company_names.map((cn, j) => <InlineBadge key={j} variant="muted">{cn}</InlineBadge>)}
+                    </div>
+                    <p className="text-[10px] text-primary italic">{cl.recommended_content_angle}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Content Generation CTA */}
+          {content.length === 0 && !loading && (
+            <div className="bg-card rounded-lg border border-border/30 p-4 mb-5 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground font-serif">Generate Marketing Content</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Create tier-specific one-pagers, email sequences, thought leadership, and ad copy for all {briefs.length} accounts.</p>
+              </div>
+              <button onClick={onGenerateContent} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shadow-md flex-shrink-0 ml-4">
+                <FiEdit3 className="w-4 h-4" /> Generate Content
+              </button>
+            </div>
+          )}
+
+          {/* Account Briefs List */}
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-serif font-semibold text-foreground flex items-center gap-1.5">
+              <FiBarChart2 className="w-4 h-4 text-primary" /> Account Briefs ({filteredBriefs.length})
+            </h3>
+            {tierFilter !== 'all' && (
+              <button onClick={() => setTierFilter('all')} className="text-xs text-primary hover:underline">Show all tiers</button>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {filteredBriefs.map(brief => {
+              const isExpanded = expandedCompany === brief.company_name
+              const compContent = content.find(c => c.company_name === brief.company_name)
+              const showingContent = contentPreview === brief.company_name && compContent
+
+              return (
+                <div key={brief.company_name} className={`bg-card rounded-lg border transition-all ${brief.tier === 'tier_1_abm' ? 'border-amber-300/50' : 'border-border/30'}`}>
+                  <button className="w-full p-4 flex items-center justify-between text-left hover:bg-muted/10 transition-colors" onClick={() => { setExpandedCompany(isExpanded ? null : brief.company_name); setContentPreview(null) }}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-sm font-bold ${brief.tier === 'tier_1_abm' ? 'bg-amber-100 text-amber-700' : brief.tier === 'tier_2_cluster' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                        {brief.scores.weighted_score.toFixed(1)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-serif font-semibold text-foreground truncate">{brief.company_name}</h4>
+                          <TierBadge tier={brief.tier} />
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{brief.tier_rationale}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                      {compContent && (
+                        <button onClick={(e) => { e.stopPropagation(); setContentPreview(showingContent ? null : brief.company_name); setExpandedCompany(brief.company_name) }} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                          <FiFile className="w-3 h-3" /> Content
+                        </button>
+                      )}
+                      {isExpanded ? <FiChevronUp className="w-5 h-5 text-muted-foreground" /> : <FiChevronDown className="w-5 h-5 text-muted-foreground" />}
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-border/20 p-4 space-y-4">
+                      {/* Score breakdown */}
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Score Breakdown</p>
+                        <div className="space-y-1.5">
+                          <ScoreBar label="Signal" value={brief.scores.signal_density} weight="25%" />
+                          <ScoreBar label="Strat. Fit" value={brief.scores.strategic_fit} weight="35%" />
+                          <ScoreBar label="Timing" value={brief.scores.timing} weight="25%" />
+                          <ScoreBar label="Scale" value={brief.scores.scale_indicator} weight="15%" />
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20">
+                          <span className="text-xs font-medium text-foreground">Weighted Score:</span>
+                          <span className={`text-sm font-bold ${brief.scores.weighted_score >= 7 ? 'text-amber-600' : brief.scores.weighted_score >= 4.5 ? 'text-primary' : 'text-muted-foreground'}`}>{brief.scores.weighted_score.toFixed(2)}</span>
+                        </div>
+                      </div>
+
+                      {/* Key Angles */}
+                      {Array.isArray(brief.key_angles) && brief.key_angles.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Key Selling Angles</p>
+                          <ul className="space-y-1">
+                            {brief.key_angles.map((angle, i) => (
+                              <li key={i} className="text-sm text-foreground flex items-start gap-1.5"><FiChevronRight className="w-3 h-3 text-primary mt-1 flex-shrink-0" />{angle}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Priority Signals */}
+                      {Array.isArray(brief.priority_signals) && brief.priority_signals.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Priority Signals</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {brief.priority_signals.map((sig, i) => <InlineBadge key={i} variant="warning">{sig}</InlineBadge>)}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Channel Strategy */}
+                      {Array.isArray(brief.channel_strategy) && brief.channel_strategy.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Channel Strategy</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {brief.channel_strategy.map((ch, i) => <InlineBadge key={i} variant="success">{ch.replace(/_/g, ' ')}</InlineBadge>)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Content preview panel */}
+                  {showingContent && compContent && <ContentPreviewPanel content={compContent} onClose={() => setContentPreview(null)} />}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -3010,6 +3558,7 @@ export default function Page() {
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; completed: string[]; inFlight?: string[] } | null>(null)
+  const [contentProgress, setContentProgress] = useState<{ current: number; total: number; completed: string[] } | null>(null)
 
   useEffect(() => {
     const stored = loadCampaigns()
@@ -3995,6 +4544,206 @@ CRITICAL RULES:
     setActiveAgentId(null)
   }, [updateCampaign])
 
+  // ─── MARKETING STRATEGY PIPELINE ────────────────────────────────────────────
+  const runMarketingStrategy = useCallback(async (campaign: Campaign) => {
+    const enriched = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
+    if (enriched.length === 0) return
+    setLoading(true)
+    setError(null)
+    setActiveAgentId(MARKETING_STRATEGIST_ID)
+
+    try {
+      // Build compact enrichment payload for the strategist
+      const companyData = enriched.map(ec => ({
+        company_name: ec.company_name,
+        revenue: ec.revenue?.figure ?? 'N/A',
+        recent_news_count: Array.isArray(ec.recent_news) ? ec.recent_news.length : 0,
+        recent_news: Array.isArray(ec.recent_news) ? ec.recent_news.slice(0, 3).map(n => n.headline) : [],
+        csuite_changes: Array.isArray(ec.csuite_changes) ? ec.csuite_changes.length : 0,
+        growth_indicators: Array.isArray(ec.growth_indicators) ? ec.growth_indicators.map(g => g.type + ': ' + g.detail) : [],
+        competitive_intel: {
+          vendors: Array.isArray(ec.competitive_intel?.vendors) ? ec.competitive_intel.vendors.length : 0,
+          competitors: Array.isArray(ec.competitive_intel?.competitors) ? ec.competitive_intel.competitors.length : 0,
+        },
+        risk_challenges: Array.isArray(ec.risk_insurance_challenges) ? ec.risk_insurance_challenges.map(r => r.challenge) : [],
+        hr_challenges: Array.isArray(ec.hr_workforce_challenges) ? ec.hr_workforce_challenges.map(h => h.challenge) : [],
+        key_sales_nuggets: Array.isArray(ec.key_sales_nuggets) ? ec.key_sales_nuggets.map(s => s.nugget) : [],
+      }))
+
+      const message = `Analyze these ${companyData.length} enriched companies for the campaign "${campaign.directive}". Score each on signal density, strategic fit, timing, and scale. Assign tiers (Tier 1 ABM max 5, Tier 2 Cluster, Tier 3 Nurture). Identify clusters among Tier 2 companies.\n\nCompany data:\n${JSON.stringify(companyData)}`
+
+      const result = await callAIAgent(message, MARKETING_STRATEGIST_ID)
+      const parsed = parseAgentResult(result)
+
+      if (!parsed || !Array.isArray(parsed?.account_briefs)) {
+        setError('Failed to parse marketing strategy results. Please try again.')
+        setLoading(false)
+        setActiveAgentId(null)
+        return
+      }
+
+      const strategy: MarketingStrategy = {
+        account_briefs: parsed.account_briefs.map((ab: any) => ({
+          company_name: ab?.company_name ?? '',
+          scores: {
+            signal_density: typeof ab?.scores?.signal_density === 'number' ? ab.scores.signal_density : 0,
+            strategic_fit: typeof ab?.scores?.strategic_fit === 'number' ? ab.scores.strategic_fit : 0,
+            timing: typeof ab?.scores?.timing === 'number' ? ab.scores.timing : 0,
+            scale_indicator: typeof ab?.scores?.scale_indicator === 'number' ? ab.scores.scale_indicator : 0,
+            weighted_score: typeof ab?.scores?.weighted_score === 'number' ? ab.scores.weighted_score : 0,
+          },
+          tier: ab?.tier ?? 'tier_3_nurture',
+          tier_rationale: ab?.tier_rationale ?? '',
+          key_angles: Array.isArray(ab?.key_angles) ? ab.key_angles : [],
+          channel_strategy: Array.isArray(ab?.channel_strategy) ? ab.channel_strategy : [],
+          priority_signals: Array.isArray(ab?.priority_signals) ? ab.priority_signals : [],
+        })),
+        clusters: Array.isArray(parsed.clusters) ? parsed.clusters.map((cl: any) => ({
+          cluster_name: cl?.cluster_name ?? '',
+          theme: cl?.theme ?? '',
+          company_names: Array.isArray(cl?.company_names) ? cl.company_names : [],
+          recommended_content_angle: cl?.recommended_content_angle ?? '',
+        })) : [],
+        tier_summary: {
+          tier_1_count: typeof parsed.tier_summary?.tier_1_count === 'number' ? parsed.tier_summary.tier_1_count : 0,
+          tier_2_count: typeof parsed.tier_summary?.tier_2_count === 'number' ? parsed.tier_summary.tier_2_count : 0,
+          tier_3_count: typeof parsed.tier_summary?.tier_3_count === 'number' ? parsed.tier_summary.tier_3_count : 0,
+          total_accounts: typeof parsed.tier_summary?.total_accounts === 'number' ? parsed.tier_summary.total_accounts : enriched.length,
+        },
+        campaign_themes: Array.isArray(parsed.campaign_themes) ? parsed.campaign_themes : [],
+      }
+
+      const t1 = strategy.account_briefs.filter(b => b.tier === 'tier_1_abm').length
+      const t2 = strategy.account_briefs.filter(b => b.tier === 'tier_2_cluster').length
+      const t3 = strategy.account_briefs.filter(b => b.tier === 'tier_3_nurture').length
+      const clusterCount = strategy.clusters.length
+
+      updateCampaign({
+        ...campaign,
+        marketingStrategy: strategy,
+        stage: 'marketing',
+        marketingSummary: `Scored ${strategy.account_briefs.length} accounts: ${t1} Tier 1 ABM, ${t2} Tier 2 Cluster (${clusterCount} cluster${clusterCount !== 1 ? 's' : ''}), ${t3} Tier 3 Nurture.`,
+        updatedAt: new Date().toISOString(),
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Marketing strategy analysis failed. Please try again.')
+    }
+    setLoading(false)
+    setActiveAgentId(null)
+  }, [updateCampaign])
+
+  const runContentGeneration = useCallback(async (campaign: Campaign) => {
+    const strategy = campaign.marketingStrategy
+    if (!strategy || !Array.isArray(strategy.account_briefs) || strategy.account_briefs.length === 0) return
+    setLoading(true)
+    setError(null)
+    setActiveAgentId(CONTENT_GENERATOR_ID)
+
+    const enriched = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
+    const allContent: CompanyContent[] = Array.isArray(campaign.marketingContent) ? [...campaign.marketingContent] : []
+    const briefs = strategy.account_briefs
+    // Skip companies that already have content
+    const existingNames = new Set(allContent.map(c => c.company_name))
+    const toGenerate = briefs.filter(b => !existingNames.has(b.company_name))
+
+    if (toGenerate.length === 0) {
+      setLoading(false)
+      setActiveAgentId(null)
+      return
+    }
+
+    setContentProgress({ current: 0, total: toGenerate.length, completed: [] })
+
+    try {
+      const CONCURRENCY = 3
+      const queue = [...toGenerate]
+      const active: Promise<void>[] = []
+      let completedCount = 0
+
+      const processCompany = async (brief: AccountBrief) => {
+        const ec = enriched.find(e => e.company_name === brief.company_name)
+        const companyInfo = ec ? {
+          company_name: ec.company_name,
+          revenue: ec.revenue?.figure ?? 'N/A',
+          recent_news: Array.isArray(ec.recent_news) ? ec.recent_news.slice(0, 3).map((n: NewsItem) => n.headline) : [],
+          growth_indicators: Array.isArray(ec.growth_indicators) ? ec.growth_indicators.map((g: GrowthIndicator) => g.type + ': ' + g.detail) : [],
+          risk_challenges: Array.isArray(ec.risk_insurance_challenges) ? ec.risk_insurance_challenges.slice(0, 2).map((r: RiskInsuranceChallenge) => r.challenge) : [],
+          key_nuggets: Array.isArray(ec.key_sales_nuggets) ? ec.key_sales_nuggets.slice(0, 3).map((s: SalesNugget) => s.nugget) : [],
+        } : { company_name: brief.company_name }
+
+        // Find cluster info for Tier 2
+        const cluster = brief.tier === 'tier_2_cluster'
+          ? strategy.clusters.find(cl => Array.isArray(cl.company_names) && cl.company_names.includes(brief.company_name))
+          : null
+
+        const message = `Generate marketing content for ${brief.company_name} (${brief.tier}). Key angles: ${brief.key_angles.join('; ')}. Channels: ${brief.channel_strategy.join(', ')}.${cluster ? ` Cluster: "${cluster.cluster_name}" — ${cluster.theme}. Content angle: ${cluster.recommended_content_angle}.` : ''}\n\nCompany intel: ${JSON.stringify(companyInfo)}`
+
+        try {
+          const result = await callAIAgent(message, CONTENT_GENERATOR_ID)
+          const parsed = parseAgentResult(result)
+
+          if (parsed) {
+            const compContent: CompanyContent = {
+              company_name: parsed.company_name ?? brief.company_name,
+              tier: parsed.tier ?? brief.tier,
+              content_assets: {
+                one_pager: parsed.content_assets?.one_pager ?? null,
+                email_sequence: Array.isArray(parsed.content_assets?.email_sequence) ? parsed.content_assets.email_sequence : null,
+                thought_leadership: parsed.content_assets?.thought_leadership ?? null,
+                email_template: parsed.content_assets?.email_template ?? null,
+                nurture_email: parsed.content_assets?.nurture_email ?? null,
+                ad_copy: Array.isArray(parsed.content_assets?.ad_copy) ? parsed.content_assets.ad_copy : [],
+              },
+              generation_notes: parsed.generation_notes ?? '',
+            }
+            allContent.push(compContent)
+          }
+        } catch (err) {
+          console.warn(`[runContentGeneration] Failed for ${brief.company_name}:`, err)
+        }
+
+        completedCount++
+        setContentProgress({
+          current: completedCount,
+          total: toGenerate.length,
+          completed: allContent.map(c => c.company_name),
+        })
+
+        // Progressive save
+        updateCampaign({
+          ...campaign,
+          marketingContent: [...allContent],
+          updatedAt: new Date().toISOString(),
+        })
+      }
+
+      while (queue.length > 0 || active.length > 0) {
+        while (active.length < CONCURRENCY && queue.length > 0) {
+          const brief = queue.shift()!
+          const promise = processCompany(brief).then(() => {
+            active.splice(active.indexOf(promise), 1)
+          })
+          active.push(promise)
+        }
+        if (active.length > 0) {
+          await Promise.race(active)
+        }
+      }
+
+      updateCampaign({
+        ...campaign,
+        marketingContent: allContent,
+        marketingSummary: `${campaign.marketingSummary ?? ''} Generated content for ${allContent.length} accounts.`,
+        updatedAt: new Date().toISOString(),
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Content generation failed. Please try again.')
+    }
+    setLoading(false)
+    setActiveAgentId(null)
+    setContentProgress(null)
+  }, [updateCampaign])
+
   const currentCampaign = view === 'campaign' ? activeCampaign : null
   const isSampleCampaign = activeCampaignId === 'sample-1'
 
@@ -4003,10 +4752,11 @@ CRITICAL RULES:
     const stages: Campaign['stage'][] = ['discovery']
     if ((c.companies?.length ?? 0) > 0) stages.push('enrichment')
     if ((c.enrichedCompanies?.length ?? 0) > 0) stages.push('contacts')
+    if ((c.contacts?.length ?? 0) > 0 || c.marketingStrategy) stages.push('marketing')
     return stages
   }
 
-  const stageLabels: Record<string, string> = { discovery: 'Prospect List', enrichment: 'Enriched Data', contacts: 'Contacts', completed: 'Contacts' }
+  const stageLabels: Record<string, string> = { discovery: 'Prospect List', enrichment: 'Enriched Data', contacts: 'Contacts', marketing: 'Marketing Strategy', completed: 'Marketing Strategy' }
 
   return (
     <ErrorBoundary>
@@ -4124,12 +4874,38 @@ CRITICAL RULES:
                   />
                 )}
 
-                {(currentCampaign.stage === 'contacts' || currentCampaign.stage === 'completed') && (
+                {currentCampaign.stage === 'contacts' && (
                   <ContactsView
                     campaign={currentCampaign}
                     loading={loading}
                     error={error}
                     onRetry={() => { if (!isSampleCampaign) runContactFinder(currentCampaign) }}
+                    onMarketingStrategy={() => {
+                      if (isSampleCampaign) return
+                      const updated = { ...currentCampaign, stage: 'marketing' as const, updatedAt: new Date().toISOString() }
+                      updateCampaign(updated)
+                    }}
+                  />
+                )}
+
+                {(currentCampaign.stage === 'marketing' || currentCampaign.stage === 'completed') && (
+                  <MarketingView
+                    campaign={currentCampaign}
+                    onUpdateCampaign={updated => { if (!isSampleCampaign) updateCampaign(updated) }}
+                    loading={loading}
+                    error={error}
+                    onRetry={() => { if (!isSampleCampaign) runMarketingStrategy(currentCampaign) }}
+                    onRunStrategy={() => {
+                      if (isSampleCampaign) return
+                      const updated = { ...currentCampaign, stage: 'marketing' as const, updatedAt: new Date().toISOString() }
+                      updateCampaign(updated)
+                      runMarketingStrategy(updated)
+                    }}
+                    onGenerateContent={() => {
+                      if (isSampleCampaign) return
+                      runContentGeneration(currentCampaign)
+                    }}
+                    contentProgress={contentProgress}
                   />
                 )}
               </div>
