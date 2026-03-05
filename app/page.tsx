@@ -1411,10 +1411,10 @@ function ProgressStepper({ stage }: { stage: Campaign['stage'] }) {
   const steps = [
     { key: 'discovery', label: 'Discovery', icon: FiSearch },
     { key: 'enrichment', label: 'Enrichment', icon: FiDatabase },
-    { key: 'contacts', label: 'Contacts', icon: FiUsers },
     { key: 'marketing', label: 'Marketing', icon: FiTarget },
+    { key: 'contacts', label: 'Contacts', icon: FiUsers },
   ]
-  const stageOrder = ['discovery', 'enrichment', 'contacts', 'marketing', 'completed']
+  const stageOrder = ['discovery', 'enrichment', 'marketing', 'contacts', 'completed']
   const currentIdx = stageOrder.indexOf(stage)
 
   return (
@@ -2770,13 +2770,14 @@ function EnrichmentDetailPanel({ ec }: { ec: EnrichedCompany }) {
 }
 
 // ─── ENRICHMENT VIEW (Consolidated) ─────────────────────────────────────────
-function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, onFindContacts, enrichmentProgress }: {
+function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, onFindContacts, onMarketingStrategy, enrichmentProgress }: {
   campaign: Campaign
   onUpdateCampaign: (c: Campaign) => void
   loading: boolean
   error: string | null
   onRetry: () => void
   onFindContacts: () => void
+  onMarketingStrategy: () => void
   enrichmentProgress?: { current: number; total: number; completed: string[]; inFlight?: string[] } | null
 }) {
   const enrichedData = Array.isArray(campaign.enrichedCompanies) ? campaign.enrichedCompanies : []
@@ -2883,10 +2884,15 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
       {enrichedData.length > 0 && (
         <>
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <span className="text-sm text-muted-foreground">{selectedCount} of {enrichedData.length} selected for contact finding</span>
-            <button onClick={onFindContacts} disabled={selectedCount === 0 || loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
-              <FiUsers className="w-4 h-4" /> Find Contacts ({selectedCount})
-            </button>
+            <span className="text-sm text-muted-foreground">{selectedCount} of {enrichedData.length} selected</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={onMarketingStrategy} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
+                <FiTarget className="w-4 h-4" /> Marketing Strategy
+              </button>
+              <button onClick={onFindContacts} disabled={selectedCount === 0 || loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-card text-foreground border border-border/40 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <FiUsers className="w-4 h-4" /> Find Contacts ({selectedCount})
+              </button>
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -2942,12 +2948,11 @@ function EnrichmentView({ campaign, onUpdateCampaign, loading, error, onRetry, o
 }
 
 // ─── CONTACTS VIEW ───────────────────────────────────────────────────────────
-function ContactsView({ campaign, loading, error, onRetry, onMarketingStrategy }: {
+function ContactsView({ campaign, loading, error, onRetry }: {
   campaign: Campaign
   loading: boolean
   error: string | null
   onRetry: () => void
-  onMarketingStrategy?: () => void
 }) {
   const companyContacts = Array.isArray(campaign.contacts) ? campaign.contacts : []
   const artifactFiles = Array.isArray(campaign.artifactFiles) ? campaign.artifactFiles : []
@@ -3103,14 +3108,6 @@ function ContactsView({ campaign, loading, error, onRetry, onMarketingStrategy }
         </div>
       )}
 
-      {/* Marketing Strategy CTA */}
-      {!loading && companyContacts.length > 0 && onMarketingStrategy && (
-        <div className="mt-5 flex justify-end">
-          <button onClick={onMarketingStrategy} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-md">
-            <FiTarget className="w-4 h-4" /> Marketing Strategy
-          </button>
-        </div>
-      )}
     </div>
   )
 }
@@ -3272,7 +3269,7 @@ function ContentPreviewPanel({ content, onClose }: { content: CompanyContent; on
   )
 }
 
-function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, onRunStrategy, onGenerateContent, contentProgress }: {
+function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, onRunStrategy, onGenerateContent, onFindContacts, contentProgress }: {
   campaign: Campaign
   onUpdateCampaign: (c: Campaign) => void
   loading: boolean
@@ -3280,6 +3277,7 @@ function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, on
   onRetry: () => void
   onRunStrategy: () => void
   onGenerateContent: () => void
+  onFindContacts: () => void
   contentProgress?: { current: number; total: number; completed: string[] } | null
 }) {
   const strategy = campaign.marketingStrategy
@@ -3426,16 +3424,29 @@ function MarketingView({ campaign, onUpdateCampaign, loading, error, onRetry, on
             </div>
           )}
 
-          {/* Content Generation CTA */}
-          {content.length === 0 && !loading && (
-            <div className="bg-card rounded-lg border border-border/30 p-4 mb-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-foreground font-serif">Generate Marketing Content</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Create tier-specific one-pagers, email sequences, thought leadership, and ad copy for all {briefs.length} accounts.</p>
+          {/* Action CTAs */}
+          {!loading && (
+            <div className="flex flex-wrap gap-3 mb-5">
+              {content.length === 0 && (
+                <div className="flex-1 min-w-[260px] bg-card rounded-lg border border-border/30 p-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground font-serif">Generate Marketing Content</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Tier-specific one-pagers, emails, thought leadership & ads for {briefs.length} accounts.</p>
+                  </div>
+                  <button onClick={onGenerateContent} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shadow-md flex-shrink-0 ml-4">
+                    <FiEdit3 className="w-4 h-4" /> Generate Content
+                  </button>
+                </div>
+              )}
+              <div className={`${content.length === 0 ? 'min-w-[220px]' : 'flex-1'} bg-card rounded-lg border border-border/30 p-4 flex items-center justify-between`}>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground font-serif">Find Contacts</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">Search for decision-maker contacts via Apollo.</p>
+                </div>
+                <button onClick={onFindContacts} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-card text-foreground border border-border/40 text-sm font-medium hover:bg-muted/50 transition-colors disabled:opacity-50 flex-shrink-0 ml-4">
+                  <FiUsers className="w-4 h-4" /> Find Contacts
+                </button>
               </div>
-              <button onClick={onGenerateContent} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shadow-md flex-shrink-0 ml-4">
-                <FiEdit3 className="w-4 h-4" /> Generate Content
-              </button>
             </div>
           )}
 
@@ -4751,12 +4762,12 @@ CRITICAL RULES:
     if (!c) return ['discovery']
     const stages: Campaign['stage'][] = ['discovery']
     if ((c.companies?.length ?? 0) > 0) stages.push('enrichment')
+    if ((c.enrichedCompanies?.length ?? 0) > 0) stages.push('marketing')
     if ((c.enrichedCompanies?.length ?? 0) > 0) stages.push('contacts')
-    if ((c.contacts?.length ?? 0) > 0 || c.marketingStrategy) stages.push('marketing')
     return stages
   }
 
-  const stageLabels: Record<string, string> = { discovery: 'Prospect List', enrichment: 'Enriched Data', contacts: 'Contacts', marketing: 'Marketing Strategy', completed: 'Marketing Strategy' }
+  const stageLabels: Record<string, string> = { discovery: 'Prospect List', enrichment: 'Enriched Data', marketing: 'Marketing Strategy', contacts: 'Contacts', completed: 'Contacts' }
 
   return (
     <ErrorBoundary>
@@ -4870,25 +4881,16 @@ CRITICAL RULES:
                       updateCampaign(updated)
                       runContactFinder(updated)
                     }}
-                    enrichmentProgress={enrichmentProgress}
-                  />
-                )}
-
-                {currentCampaign.stage === 'contacts' && (
-                  <ContactsView
-                    campaign={currentCampaign}
-                    loading={loading}
-                    error={error}
-                    onRetry={() => { if (!isSampleCampaign) runContactFinder(currentCampaign) }}
                     onMarketingStrategy={() => {
                       if (isSampleCampaign) return
                       const updated = { ...currentCampaign, stage: 'marketing' as const, updatedAt: new Date().toISOString() }
                       updateCampaign(updated)
                     }}
+                    enrichmentProgress={enrichmentProgress}
                   />
                 )}
 
-                {(currentCampaign.stage === 'marketing' || currentCampaign.stage === 'completed') && (
+                {currentCampaign.stage === 'marketing' && (
                   <MarketingView
                     campaign={currentCampaign}
                     onUpdateCampaign={updated => { if (!isSampleCampaign) updateCampaign(updated) }}
@@ -4905,7 +4907,22 @@ CRITICAL RULES:
                       if (isSampleCampaign) return
                       runContentGeneration(currentCampaign)
                     }}
+                    onFindContacts={() => {
+                      if (isSampleCampaign) return
+                      const updated = { ...currentCampaign, stage: 'contacts' as const, updatedAt: new Date().toISOString() }
+                      updateCampaign(updated)
+                      runContactFinder(updated)
+                    }}
                     contentProgress={contentProgress}
+                  />
+                )}
+
+                {(currentCampaign.stage === 'contacts' || currentCampaign.stage === 'completed') && (
+                  <ContactsView
+                    campaign={currentCampaign}
+                    loading={loading}
+                    error={error}
+                    onRetry={() => { if (!isSampleCampaign) runContactFinder(currentCampaign) }}
                   />
                 )}
               </div>

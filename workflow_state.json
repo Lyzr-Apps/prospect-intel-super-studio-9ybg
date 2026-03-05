@@ -199,7 +199,7 @@
   ],
   "workflow_structure": {
     "pattern": "dual manager-subagent + sequential + marketing pipeline",
-    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> enrichment_manager <-> [financial_growth_researcher, news_leadership_researcher, competitive_market_researcher, risk_workforce_analyst] -> contact_finder -> marketing_strategist -> content_generator -> output_node",
+    "flow": "input_node -> discovery_manager <-> [discovery_researcher, company_extractor] -> enrichment_manager <-> [financial_growth_researcher, news_leadership_researcher, competitive_market_researcher, risk_workforce_analyst] -> [marketing_strategist -> content_generator, contact_finder] -> output_node",
     "discovery_pipeline": "Manager segments directive -> Researcher searches LIVE web via Gemini grounding + SERPAPI -> Extractor verifies and structures company names via Gemini grounding -> Manager deduplicates and consolidates",
     "enrichment_pipeline": "4 specialized Gemini 2.5 Pro sub-agents called directly in parallel (bypassing manager for speed) -> Financial & Growth + News & Leadership + Competitive & Market + Risk & Workforce -> All use Google Search grounding for real-time data -> Client-side merge into single enriched company profile",
     "marketing_pipeline": "Marketing Strategist scores all enriched companies on 4 dimensions (signal density, strategic fit, timing, scale) -> Assigns tiers (Tier 1 ABM max 5, Tier 2 Cluster, Tier 3 Nurture) -> Identifies cross-account clusters -> Content Generator produces tier-appropriate assets (one-pagers, emails, ads) per company concurrently"
